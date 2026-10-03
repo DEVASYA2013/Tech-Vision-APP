@@ -1,0 +1,242 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control for administrative and staff access",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "phone": { "type": "string", "maxLength": 20 },
+        "isActive": { "type": "boolean" },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "isActive"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Course offered by Tech Vision Computer Class",
+      "type": "object",
+      "properties": {
+        "courseId": { "type": "string", "maxLength": 64 },
+        "courseName": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "duration": { "type": "string", "maxLength": 64 },
+        "standardFee": { "type": "number" },
+        "sessionsCount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["courseId", "courseName", "standardFee", "isActive"]
+    },
+    "Batch": {
+      "title": "Batch",
+      "description": "Batch schedules and instructor assignments",
+      "type": "object",
+      "properties": {
+        "batchId": { "type": "string", "maxLength": 64 },
+        "batchName": { "type": "string", "maxLength": 128 },
+        "courseId": { "type": "string", "maxLength": 64 },
+        "courseName": { "type": "string", "maxLength": 128 },
+        "startDate": { "type": "string", "maxLength": 32 },
+        "endDate": { "type": "string", "maxLength": 32 },
+        "daysOfWeek": { "type": "array" },
+        "startTime": { "type": "string", "maxLength": 32 },
+        "endTime": { "type": "string", "maxLength": 32 },
+        "maxCapacity": { "type": "number" },
+        "instructorStaffId": { "type": "string", "maxLength": 128 },
+        "instructorName": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "completed", "upcoming"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["batchId", "batchName", "courseId", "maxCapacity", "status"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student record with course enrollment and fee balance",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 64 },
+        "fullName": { "type": "string", "maxLength": 128 },
+        "photoUrl": { "type": "string", "maxLength": 512 },
+        "mobile": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 128 },
+        "address": { "type": "string", "maxLength": 512 },
+        "emergencyContact": { "type": "string", "maxLength": 64 },
+        "courseId": { "type": "string", "maxLength": 64 },
+        "courseName": { "type": "string", "maxLength": 128 },
+        "batchId": { "type": "string", "maxLength": 64 },
+        "batchName": { "type": "string", "maxLength": 128 },
+        "admissionDate": { "type": "string", "maxLength": 32 },
+        "startDate": { "type": "string", "maxLength": 32 },
+        "expectedEndDate": { "type": "string", "maxLength": 32 },
+        "totalCourseFee": { "type": "number" },
+        "discount": { "type": "number" },
+        "netPayable": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "outstandingBalance": { "type": "number" },
+        "assignedSeatId": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["active", "completed", "on_hold", "inactive"] },
+        "internalNotes": { "type": "string", "maxLength": 2000 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["studentId", "fullName", "mobile", "courseId", "netPayable", "status"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily batch attendance roll record",
+      "type": "object",
+      "properties": {
+        "attendanceId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 32 },
+        "courseId": { "type": "string", "maxLength": 64 },
+        "batchId": { "type": "string", "maxLength": 64 },
+        "records": { "type": "array" },
+        "markedByStaffId": { "type": "string", "maxLength": 128 },
+        "markedByStaffName": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["attendanceId", "date", "batchId", "records"]
+    },
+    "FeePayment": {
+      "title": "FeePayment",
+      "description": "Recorded student fee payment or receipt",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "receiptNo": { "type": "string", "maxLength": 64 },
+        "studentId": { "type": "string", "maxLength": 64 },
+        "studentName": { "type": "string", "maxLength": 128 },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "upi", "bank_transfer", "cheque", "card"] },
+        "transactionRef": { "type": "string", "maxLength": 128 },
+        "paymentDate": { "type": "string", "maxLength": 32 },
+        "recordedByStaffId": { "type": "string", "maxLength": 128 },
+        "recordedByStaffName": { "type": "string", "maxLength": 128 },
+        "remarks": { "type": "string", "maxLength": 500 },
+        "isReversal": { "type": "boolean" },
+        "reversalReason": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["paymentId", "receiptNo", "studentId", "amount", "paymentMethod", "paymentDate"]
+    },
+    "Seat": {
+      "title": "Seat",
+      "description": "Lab computer seat workstation status",
+      "type": "object",
+      "properties": {
+        "seatId": { "type": "string", "maxLength": 32 },
+        "seatNumber": { "type": "string", "maxLength": 32 },
+        "rowName": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["available", "occupied", "inactive", "maintenance"] },
+        "assignedStudentId": { "type": "string", "maxLength": 64 },
+        "assignedStudentName": { "type": "string", "maxLength": 128 },
+        "assignedCourseId": { "type": "string", "maxLength": 64 },
+        "assignedBatchId": { "type": "string", "maxLength": 64 },
+        "computerName": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 256 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["seatId", "seatNumber", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security and operational audit trail entry",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 128 },
+        "performedByUid": { "type": "string", "maxLength": 128 },
+        "performedByName": { "type": "string", "maxLength": 128 },
+        "performedByRole": { "type": "string", "maxLength": 32 },
+        "targetEntity": { "type": "string", "maxLength": 64 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 2000 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["logId", "action", "performedByUid", "timestamp"]
+    },
+    "InstituteSettings": {
+      "title": "InstituteSettings",
+      "description": "Institute settings and configurations",
+      "type": "object",
+      "properties": {
+        "instituteName": { "type": "string", "maxLength": 128 },
+        "address": { "type": "string", "maxLength": 256 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 16 },
+        "totalSeats": { "type": "number" },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["instituteName", "address", "phone"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Operational alerts and fee reminders",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 128 },
+        "message": { "type": "string", "maxLength": 512 },
+        "relatedId": { "type": "string", "maxLength": 64 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["notificationId", "type", "title", "message", "isRead"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles for authentication and role authorization"
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Courses catalog offered by Tech Vision"
+    },
+    "/batches/{batchId}": {
+      "schema": { "$ref": "#/entities/Batch" },
+      "description": "Class batches and schedules"
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Enrolled student records"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Daily student attendance records"
+    },
+    "/feePayments/{paymentId}": {
+      "schema": { "$ref": "#/entities/FeePayment" },
+      "description": "Fee transaction records and receipts"
+    },
+    "/seats/{seatId}": {
+      "schema": { "$ref": "#/entities/Seat" },
+      "description": "Computer lab seat positions and assignments"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Audit trail entries"
+    },
+    "/instituteSettings/{settingsId}": {
+      "schema": { "$ref": "#/entities/InstituteSettings" },
+      "description": "Global institute settings"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "System notices and fee alerts"
+    }
+  }
+}

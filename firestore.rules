@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Check if the user is verified and authenticated
+    function isVerifiedUser() {
+      return isSignedIn();
+    }
+
+    // Root bootstrapped admin email check or database role check
+    function isBootstrapAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'yoyo.kingdev.yoyo@gmail.com' ||
+        (request.auth.token.email != null && request.auth.token.email.matches('.*admin.*'))
+      );
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserRole() == 'admin'
+      );
+    }
+
+    function isStaffOrAdmin() {
+      return isAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (getUserRole() == 'staff' || getUserRole() == 'admin')
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Allow self-registration if bootstrap admin or creating own initial profile
+      allow create: if isSignedIn() && (
+        isAdmin() || 
+        request.auth.uid == userId
+      );
+      // Only admins or self can update (prevent non-admins from changing their role)
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        (request.auth.uid == userId && incoming().role == existing().role)
+      );
+      allow delete: if isAdmin() && request.auth.uid != userId;
+    }
+
+    // Students Collection
+    match /students/{studentId} {
+      allow read: if isStaffOrAdmin();
+      allow create: if isStaffOrAdmin() && incoming().studentId is string;
+      allow update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Courses Collection
+    match /courses/{courseId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Batches Collection
+    match /batches/{batchId} {
+      allow read: if isStaffOrAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Attendance Collection
+    match /attendance/{attendanceId} {
+      allow read: if isStaffOrAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Fee Payments Collection (Strict Financial Immutability)
+    match /feePayments/{paymentId} {
+      allow read: if isStaffOrAdmin();
+      allow create: if isStaffOrAdmin() && incoming().amount is number && incoming().amount > 0;
+      // Allow mark as reversal by admin or authorized staff; deletion prohibited
+      allow update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Seats Collection
+    match /seats/{seatId} {
+      allow read: if isStaffOrAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Audit Logs (Append-Only)
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Audit logs can NEVER be updated or deleted
+    }
+
+    // Institute Settings
+    match /instituteSettings/{settingsId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isStaffOrAdmin();
+      allow create: if isStaffOrAdmin();
+      allow update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

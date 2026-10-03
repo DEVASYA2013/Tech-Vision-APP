@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="tv-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-grad)" />
+  <rect x="76" y="96" width="360" height="230" rx="20" stroke="url(#tv-grad)" stroke-width="24" fill="#0b1329" />
+  <rect x="100" y="120" width="312" height="182" rx="10" fill="#030712" />
+  
+  <!-- Screen Graphic: Tech Vision Monogram & Graduation Cap -->
+  <path d="M256 148 L324 182 L256 216 L188 182 Z" fill="url(#tv-grad)" />
+  <path d="M212 195 L212 232 C212 248 300 248 300 232 L300 195" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" fill="none" />
+  <path d="M324 182 L334 228" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
+  <circle cx="334" cy="232" r="5" fill="#38bdf8" />
+  
+  <!-- Stand -->
+  <path d="M256 326 L256 384" stroke="url(#tv-grad)" stroke-width="24" stroke-linecap="round" />
+  <path d="M180 396 L332 396" stroke="url(#tv-grad)" stroke-width="24" stroke-linecap="round" />
+  
+  <!-- Sparkles -->
+  <circle cx="130" cy="150" r="4" fill="#38bdf8" />
+  <circle cx="380" cy="150" r="4" fill="#38bdf8" />
+</svg>
