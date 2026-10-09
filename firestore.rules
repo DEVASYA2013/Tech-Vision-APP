@@ -59,83 +59,73 @@ service cloud.firestore {
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isSignedIn();
-      // Allow self-registration if bootstrap admin or creating own initial profile
-      allow create: if isSignedIn() && (
-        isAdmin() || 
-        request.auth.uid == userId
-      );
-      // Only admins or self can update (prevent non-admins from changing their role)
-      allow update: if isSignedIn() && (
-        isAdmin() || 
-        (request.auth.uid == userId && incoming().role == existing().role)
-      );
-      allow delete: if isAdmin() && request.auth.uid != userId;
+      allow read: if true;
+      allow create: if incoming().email is string && incoming().role in ['admin', 'staff'];
+      allow update: if incoming().email is string;
+      allow delete: if true;
     }
 
     // Students Collection
     match /students/{studentId} {
-      allow read: if isStaffOrAdmin();
-      allow create: if isStaffOrAdmin() && incoming().studentId is string;
-      allow update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create: if incoming().studentId is string;
+      allow update, delete: if true;
     }
 
     // Courses Collection
     match /courses/{courseId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     // Batches Collection
     match /batches/{batchId} {
-      allow read: if isStaffOrAdmin();
-      allow create, update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     // Attendance Collection
     match /attendance/{attendanceId} {
-      allow read: if isStaffOrAdmin();
-      allow create, update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
-    // Fee Payments Collection (Strict Financial Immutability)
+    // Fee Payments Collection
     match /feePayments/{paymentId} {
-      allow read: if isStaffOrAdmin();
-      allow create: if isStaffOrAdmin() && incoming().amount is number && incoming().amount > 0;
-      // Allow mark as reversal by admin or authorized staff; deletion prohibited
-      allow update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create: if incoming().amount is number && incoming().amount > 0;
+      allow update, delete: if true;
     }
 
     // Seats Collection
     match /seats/{seatId} {
-      allow read: if isStaffOrAdmin();
-      allow create, update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Enquiries Collection
+    match /enquiries/{enquiryId} {
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     // Audit Logs (Append-Only)
     match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
+      allow read: if true;
+      allow create: if true;
       allow update, delete: if false; // Audit logs can NEVER be updated or deleted
     }
 
     // Institute Settings
     match /instituteSettings/{settingsId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if true;
+      allow write: if true;
     }
 
     // Notifications
     match /notifications/{notificationId} {
-      allow read: if isStaffOrAdmin();
-      allow create: if isStaffOrAdmin();
-      allow update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if true;
     }
   }
 }

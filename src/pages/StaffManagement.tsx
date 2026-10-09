@@ -9,13 +9,23 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 export const StaffManagement: React.FC = () => {
-  const { registerStaffMember, deleteStaffUser, userProfile, isAdmin } = useAuth();
+  const {
+    registerStaffMember,
+    updateStaffRole,
+    updateStaffPassword,
+    deleteStaffUser,
+    userProfile,
+    isAdmin,
+  } = useAuth();
   const { showToast } = useToast();
 
   const [staffUsers, setStaffUsers] = useState<UserProfile[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<UserProfile | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<UserProfile | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -30,7 +40,7 @@ export const StaffManagement: React.FC = () => {
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'users'), (snap) => {
-      const list = snap.docs.map((d) => d.data() as UserProfile);
+      const list = snap.docs.map((d) => ({ ...d.data(), uid: d.data().uid || d.id } as UserProfile));
       setStaffUsers(list);
       setLoading(false);
     }, (error) => {
@@ -95,6 +105,27 @@ export const StaffManagement: React.FC = () => {
     }
   };
 
+  const handleRoleChange = async (targetUser: UserProfile, newRole: UserRole) => {
+    if (targetUser.role === newRole) return;
+    try {
+      await updateStaffRole(targetUser.uid, newRole);
+      if (newRole === 'staff') {
+        showToast(
+          `Role permission changed to "Staff" for ${targetUser.displayName || targetUser.email}. Staff Management tab is now hidden for this user.`,
+          'info'
+        );
+      } else {
+        showToast(
+          `Role permission changed to "Administrator" for ${targetUser.displayName || targetUser.email}.`,
+          'success'
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update role permission';
+      showToast(msg, 'error');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -154,8 +185,9 @@ export const StaffManagement: React.FC = () => {
             <thead className="bg-slate-50 font-bold text-slate-600 border-b">
               <tr>
                 <th className="py-3 px-4">Name & Profile</th>
-                <th className="py-3 px-4">Email Address</th>
-                <th className="py-3 px-4">Role</th>
+                <th className="py-3 px-4">Login Email</th>
+                <th className="py-3 px-4">Login Password</th>
+                <th className="py-3 px-4">Role Permission</th>
                 <th className="py-3 px-4">Phone</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -164,7 +196,7 @@ export const StaffManagement: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {staffUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     No staff records found. Click &quot;Add Staff Member&quot; to register instructors.
                   </td>
                 </tr>
@@ -179,17 +211,38 @@ export const StaffManagement: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-slate-600">{u.email}</td>
+                    <td className="py-3 px-4 text-slate-600 font-mono">{u.email}</td>
                     <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      {u.staffPassword ? (
+                        <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          {u.staffPassword}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setPasswordTarget(u);
+                            setNewPasswordInput('');
+                          }}
+                          className="text-[11px] font-bold text-cyan-600 hover:underline cursor-pointer"
+                        >
+                          Set Password
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <select
+                        value={u.role === 'admin' ? 'admin' : 'staff'}
+                        onChange={(e) => handleRoleChange(u, e.target.value as UserRole)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-cyan-500 ${
                           u.role === 'admin'
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
                         }`}
+                        title="Change Role Permission (Staff cannot access Staff Management)"
                       >
-                        {u.role}
-                      </span>
+                        <option value="staff">Staff (No Staff Mgmt)</option>
+                        <option value="admin">Administrator (Full Access)</option>
+                      </select>
                     </td>
                     <td className="py-3 px-4 text-slate-500">{u.phone || '—'}</td>
                     <td className="py-3 px-4">
@@ -205,6 +258,17 @@ export const StaffManagement: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setPasswordTarget(u);
+                            setNewPasswordInput(u.staffPassword || '');
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                          title="Set or change staff login password"
+                        >
+                          <Lock className="w-3 h-3" />
+                          Password
+                        </button>
                         {u.uid !== userProfile?.uid && (
                           <>
                             <button
@@ -305,9 +369,14 @@ export const StaffManagement: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white"
               >
-                <option value="staff">Staff (Attendance & Fees)</option>
+                <option value="staff">Staff (No Staff Management Access)</option>
                 <option value="admin">Administrator (Full Access)</option>
               </select>
+              <p className="text-[10px] text-slate-400 mt-1">
+                {formData.role === 'staff'
+                  ? 'Staff cannot view or open Staff Management, Institute Settings, or Audit Trail.'
+                  : 'Administrators have full access to all tabs including Staff Management.'}
+              </p>
             </div>
 
             <div>
@@ -342,6 +411,85 @@ export const StaffManagement: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Set / Update Staff Password Modal */}
+      {passwordTarget && (
+        <Modal
+          isOpen={!!passwordTarget}
+          onClose={() => setPasswordTarget(null)}
+          title={`Set Login Password — ${passwordTarget.displayName || passwordTarget.email}`}
+          subtitle={`Update the login password for ${passwordTarget.email}.`}
+          maxWidth="md"
+        >
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newPasswordInput || newPasswordInput.length < 4) {
+                showToast('Password must be at least 4 characters.', 'error');
+                return;
+              }
+              setIsUpdatingPassword(true);
+              try {
+                await updateStaffPassword(passwordTarget.uid, newPasswordInput);
+                showToast(
+                  `Password updated for ${passwordTarget.displayName || passwordTarget.email}! They can now sign in with this password.`,
+                  'success'
+                );
+                setPasswordTarget(null);
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed to update password';
+                showToast(msg, 'error');
+              } finally {
+                setIsUpdatingPassword(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Staff Login Email
+              </label>
+              <input
+                type="text"
+                disabled
+                value={passwordTarget.email}
+                className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono text-slate-600"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                New Login Password *
+              </label>
+              <input
+                type="text"
+                required
+                value={newPasswordInput}
+                onChange={(e) => setNewPasswordInput(e.target.value)}
+                placeholder="Enter password (min 4 characters)"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPasswordTarget(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUpdatingPassword}
+                className="px-5 py-2 text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
+              >
+                {isUpdatingPassword ? 'Saving...' : 'Save Password'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {/* Delete Staff Confirm Dialog */}
       <ConfirmDialog

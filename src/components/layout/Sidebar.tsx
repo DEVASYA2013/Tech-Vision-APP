@@ -17,7 +17,10 @@ import {
   Database,
   Sparkles,
   Trash2,
+  ClipboardList,
   X,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useInstitute } from '../../context/InstituteContext';
@@ -25,6 +28,7 @@ import { useToast } from '../ui/Toast';
 
 export type NavTab =
   | 'dashboard'
+  | 'enquiries'
   | 'students'
   | 'batches'
   | 'attendance'
@@ -53,10 +57,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setIsMobileOpen,
 }) => {
   const { isAdmin, userProfile } = useAuth();
-  const { students, loadDemoData, clearDemoData } = useInstitute();
+  const { students, enquiries, settings, loadDemoData, clearDemoData } = useInstitute();
   const { showToast } = useToast();
 
+  const websiteDomain = settings.website || 'techvisioncomputer.com';
+  const websiteHref = websiteDomain.startsWith('http')
+    ? websiteDomain
+    : `https://${websiteDomain}`;
+
   const hasDemoData = students.some((s) => s.isDemo);
+  const openEnquiriesCount = enquiries.filter(
+    (e) => e.status === 'new' || e.status === 'follow_up' || e.status === 'demo_scheduled'
+  ).length;
 
   const handleLoadDemo = async () => {
     try {
@@ -78,11 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard, role: 'all' },
+    { id: 'enquiries' as NavTab, label: 'Enquiries & Form', icon: ClipboardList, role: 'all' },
     { id: 'students' as NavTab, label: 'Student Directory', icon: Users, role: 'all' },
     { id: 'batches' as NavTab, label: 'Batches & Timetable', icon: GraduationCap, role: 'all' },
     { id: 'attendance' as NavTab, label: 'Daily Attendance', icon: CalendarCheck, role: 'all' },
     { id: 'fees' as NavTab, label: 'Fees & Receipts', icon: CreditCard, role: 'all' },
-    { id: 'seats' as NavTab, label: 'Computer Lab Seats', icon: Monitor, role: 'all' },
+    { id: 'seats' as NavTab, label: 'Computer Lab (14 PCs)', icon: Monitor, role: 'all' },
     { id: 'courses' as NavTab, label: 'Courses Catalog', icon: BookOpen, role: 'all' },
     { id: 'reports' as NavTab, label: 'Reports & Exports', icon: BarChart3, role: 'all' },
     { id: 'staff' as NavTab, label: 'Staff Management', icon: UserCog, role: 'admin' },
@@ -93,11 +106,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'backup' as NavTab, label: 'Backup & Recovery', icon: HelpCircle, role: 'all' },
   ];
 
+  const canAccessAdminTabs = isAdmin && userProfile?.role !== 'staff';
+
   const filteredNavItems = navItems.filter(
-    (item) => item.role === 'all' || (item.role === 'admin' && isAdmin)
+    (item) => item.role === 'all' || (item.role === 'admin' && canAccessAdminTabs)
   );
 
   const handleNavClick = (tab: NavTab) => {
+    const targetItem = navItems.find((i) => i.id === tab);
+    if (targetItem?.role === 'admin' && !canAccessAdminTabs) {
+      return;
+    }
     setCurrentTab(tab);
     setIsMobileOpen(false);
   };
@@ -108,9 +127,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div>
         <div className="flex items-center justify-between px-5 py-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-900/30 text-white shrink-0">
-              <GraduationCap className="w-6 h-6" />
-            </div>
+            <img
+              src={settings.logoUrl || '/pwa-192x192.png'}
+              alt="Tech Vision Computer Class Logo"
+              className="w-11 h-11 rounded-xl object-contain bg-slate-950 border border-slate-700/80 shadow-lg shadow-cyan-900/30 shrink-0"
+            />
             <div>
               <div className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
                 TECH VISION
@@ -119,8 +140,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 font-medium truncate">
-                Ahmedabad, Gujarat
+                IT Education • Ahmedabad
               </div>
+              <a
+                href={websiteHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 transition mt-0.5"
+              >
+                <Globe className="w-2.5 h-2.5" />
+                {websiteDomain}
+              </a>
             </div>
           </div>
           {/* Mobile close button */}
@@ -194,6 +224,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
                 />
                 <span className="truncate">{item.label}</span>
+                {item.id === 'enquiries' && openEnquiriesCount > 0 && (
+                  <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    {openEnquiriesCount}
+                  </span>
+                )}
                 {item.id === 'ai' && (
                   <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-900/80 text-cyan-300 border border-cyan-700">
                     AI
@@ -206,7 +241,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User / Institute Footer */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/60">
+      <div className="p-4 border-t border-slate-800 bg-slate-950/60 space-y-2.5">
+        <a
+          href={websiteHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] font-bold text-cyan-400 transition"
+        >
+          <span className="flex items-center gap-1.5 truncate">
+            <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            {websiteDomain}
+          </span>
+          <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
+        </a>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-cyan-400 text-xs shrink-0">
             {userProfile?.displayName?.slice(0, 2).toUpperCase() || 'TV'}

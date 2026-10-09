@@ -1,17 +1,55 @@
 {
   "id": "/",
-  "name": "Tech Vision Computer Class Management System",
-  "short_name": "TechVision",
-  "description": "Institute management system for Tech Vision Computer Class, Ahmedabad",
+  "name": "Tech Vision Computer Class",
+  "short_name": "Tech Vision",
+  "description": "Official institute management system for Tech Vision Computer Class, Ahmedabad: admissions, batches, attendance, fee receipts, computer lab seats, and reports.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "dir": "ltr",
+  "lang": "en-IN",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
+  "categories": [
+    "education",
+    "business",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
   "icons": [
     {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icon.svg",
-      "sizes": "192x192 512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     }

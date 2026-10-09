@@ -10,6 +10,7 @@
         "displayName": { "type": "string", "maxLength": 128 },
         "role": { "type": "string", "enum": ["admin", "staff"] },
         "phone": { "type": "string", "maxLength": 20 },
+        "staffPassword": { "type": "string", "maxLength": 128 },
         "isActive": { "type": "boolean" },
         "permissions": { "type": "array" },
         "createdAt": { "type": "string" },
@@ -195,6 +196,35 @@
         "createdAt": { "type": "string" }
       },
       "required": ["notificationId", "type", "title", "message", "isRead"]
+    },
+    "Enquiry": {
+      "title": "Enquiry",
+      "description": "Student admission enquiry and follow-up record",
+      "type": "object",
+      "properties": {
+        "enquiryId": { "type": "string", "maxLength": 64 },
+        "fullName": { "type": "string", "maxLength": 128 },
+        "mobile": { "type": "string", "maxLength": 32 },
+        "alternatePhone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 128 },
+        "address": { "type": "string", "maxLength": 512 },
+        "qualification": { "type": "string", "maxLength": 128 },
+        "courseId": { "type": "string", "maxLength": 64 },
+        "courseName": { "type": "string", "maxLength": 128 },
+        "preferredTiming": { "type": "string", "maxLength": 64 },
+        "quotedFee": { "type": "number" },
+        "source": { "type": "string", "maxLength": 64 },
+        "enquiryDate": { "type": "string", "maxLength": 32 },
+        "followUpDate": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["new", "follow_up", "demo_scheduled", "converted", "closed"] },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "handledByName": { "type": "string", "maxLength": 128 },
+        "convertedStudentId": { "type": "string", "maxLength": 64 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["enquiryId", "fullName", "mobile", "courseId", "status"]
     }
   },
   "firestore": {
@@ -237,6 +267,10 @@
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/Notification" },
       "description": "System notices and fee alerts"
+    },
+    "/enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/Enquiry" },
+      "description": "Course admission enquiries and counselling follow-ups"
     }
   }
 }

@@ -18,6 +18,7 @@ import {
   deleteDoc,
   collection,
   getDocs,
+  onSnapshot,
   limit,
   query,
   where,
@@ -36,10 +37,36 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   registerFirstAdmin: (email: string, pass: string, name: string, phone: string) => Promise<void>;
   registerStaffMember: (email: string, pass: string, name: string, phone: string, role: UserRole) => Promise<string | void>;
+  updateStaffRole: (uid: string, newRole: UserRole) => Promise<void>;
+  updateStaffPassword: (uid: string, newPass: string) => Promise<void>;
   deleteStaffUser: (uid: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUserProfile: () => Promise<void>;
+}
+
+const STAFF_SESSION_STORAGE_KEY = 'tv_staff_session_uid';
+
+function createSessionUserFromProfile(profile: UserProfile): User {
+  return {
+    uid: profile.uid,
+    email: profile.email,
+    displayName: profile.displayName,
+    emailVerified: true,
+    isAnonymous: false,
+    metadata: {},
+    providerData: [],
+    refreshToken: '',
+    tenantId: null,
+    delete: async () => {},
+    getIdToken: async () => 'staff-session-token',
+    getIdTokenResult: async () => ({} as any),
+    reload: async () => {},
+    toJSON: () => ({ uid: profile.uid, email: profile.email, displayName: profile.displayName }),
+    phoneNumber: profile.phone || null,
+    photoURL: null,
+    providerId: 'password',
+  } as unknown as User;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -119,19 +146,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // If logged in via Google or first user, create profile if bootstrap email or empty db
-        const isBootstrapEmail =
-          firebaseUser.email === 'yoyo.kingdev.yoyo@gmail.com' ||
-          (firebaseUser.email && firebaseUser.email.toLowerCase().includes('admin'));
+        // If logged in via Google or first user, create profile if bootstrap email
+        const isBootstrapEmail = firebaseUser.email === 'yoyo.kingdev.yoyo@gmail.com';
 
         const newProfile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || 'Administrator',
+          displayName: firebaseUser.displayName || (isBootstrapEmail ? 'Administrator' : 'Staff Member'),
           role: isBootstrapEmail ? 'admin' : 'staff',
           isActive: true,
           createdAt: new Date().toISOString(),
-          permissions: ['all'],
+          permissions: isBootstrapEmail
+            ? ['all']
+            : ['attendance', 'fees', 'students', 'seats', 'enquiries'],
         };
 
         try {
@@ -155,40 +182,187 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkFirstAdminNeeded();
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
       if (user) {
+        localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+        setCurrentUser(user);
         await fetchProfile(user);
-      } else {
-        setUserProfile(null);
+        setLoading(false);
+        return;
       }
+
+      // Check if a staff/admin user is signed in via the built-in Email/Password session
+      const savedStaffUid = localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
+      if (savedStaffUid) {
+        try {
+          const staffSnap = await getDoc(doc(db, 'users', savedStaffUid));
+          if (staffSnap.exists()) {
+            const staffData = staffSnap.data() as UserProfile;
+            if (staffData.isActive !== false) {
+              const normalizedProfile: UserProfile = {
+                ...staffData,
+                uid: staffData.uid || savedStaffUid,
+                role: staffData.role === 'admin' ? 'admin' : 'staff',
+              };
+              setUserProfile(normalizedProfile);
+              setCurrentUser(createSessionUserFromProfile(normalizedProfile));
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Could not restore staff session:', err);
+        }
+        localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+      }
+
+      setCurrentUser(null);
+      setUserProfile(null);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
+  // Real-time listener on active user's Firestore profile so role permission changes apply immediately
+  useEffect(() => {
+    const activeUid = userProfile?.uid || currentUser?.uid;
+    if (!activeUid) return;
+
+    const unsubProfile = onSnapshot(
+      doc(db, 'users', activeUid),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as UserProfile;
+          if (data.isActive === false) {
+            // Account was suspended
+            localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+            signOut(auth).catch(() => {});
+            setCurrentUser(null);
+            setUserProfile(null);
+            return;
+          }
+          setUserProfile({
+            ...data,
+            uid: data.uid || snap.id,
+            role: data.role === 'admin' ? 'admin' : 'staff',
+          });
+        }
+      },
+      () => {}
+    );
+
+    return () => unsubProfile();
+  }, [currentUser?.uid, userProfile?.uid]);
+
   const signInWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email.trim(), pass);
+    const trimmedEmail = email.trim().toLowerCase();
+
+    // 1. Check Firestore `users` collection for registered Staff or Admin account
+    const usersSnap = await getDocs(collection(db, 'users'));
+    const matchingDocs = usersSnap.docs.filter(
+      (d) => (d.data().email || '').trim().toLowerCase() === trimmedEmail
+    );
+
+    if (matchingDocs.length > 0) {
+      // Sort by updatedAt descending so the latest role/password update wins
+      matchingDocs.sort((a, b) => {
+        const aTime = a.data().updatedAt || a.data().createdAt || '';
+        const bTime = b.data().updatedAt || b.data().createdAt || '';
+        return bTime.localeCompare(aTime);
+      });
+      const matchedDoc = matchingDocs[0];
+      const matchedData = matchedDoc.data() as UserProfile;
+      const docUid = matchedData.uid || matchedDoc.id;
+
+      if (matchedData.isActive === false) {
+        throw new Error('This staff account has been suspended by the administrator.');
+      }
+
+      // Verify password if stored; if account was created before password storage, bind this password on first login
+      if (matchedData.staffPassword) {
+        if (matchedData.staffPassword !== pass) {
+          throw new Error('Incorrect password. Please enter the password set by your Administrator.');
+        }
+      } else {
+        if (pass.length < 4) {
+          throw new Error('Password must be at least 4 characters.');
+        }
+        await setDoc(
+          doc(db, 'users', matchedDoc.id),
+          { staffPassword: pass, updatedAt: new Date().toISOString() },
+          { merge: true }
+        );
+      }
+
+      const normalizedRole: UserRole = matchedData.role === 'admin' ? 'admin' : 'staff';
+      const activeProfile: UserProfile = {
+        ...matchedData,
+        uid: docUid,
+        role: normalizedRole,
+        permissions:
+          normalizedRole === 'admin'
+            ? ['all']
+            : ['attendance', 'fees', 'students', 'seats', 'enquiries'],
+        staffPassword: matchedData.staffPassword || pass,
+      };
+
+      // Sign out any lingering Firebase Auth session so it doesn't override the staff session
+      await signOut(auth).catch(() => {});
+      localStorage.setItem(STAFF_SESSION_STORAGE_KEY, matchedDoc.id);
+      setUserProfile(activeProfile);
+      setCurrentUser(createSessionUserFromProfile(activeProfile));
+      return;
+    }
+
+    // 2. Fallback to Firebase Auth if not in Firestore users yet
+    try {
+      await signInWithEmailAndPassword(auth, trimmedEmail, pass);
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (
+        code === 'auth/operation-not-allowed' ||
+        code === 'auth/user-not-found' ||
+        code === 'auth/invalid-credential'
+      ) {
+        throw new Error(
+          `No staff account found for "${trimmedEmail}". Please ask the Administrator to add this email & password in the Staff Management tab.`
+        );
+      }
+      throw err;
+    }
   };
 
   const registerFirstAdmin = async (email: string, pass: string, name: string, phone: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-    if (cred.user) {
-      await updateProfile(cred.user, { displayName: name });
-      const adminProfile: UserProfile = {
-        uid: cred.user.uid,
-        email: email.trim(),
-        displayName: name,
-        role: 'admin',
-        phone,
-        isActive: true,
-        permissions: ['all'],
-        createdAt: new Date().toISOString(),
-      };
-      await setDoc(doc(db, 'users', cred.user.uid), adminProfile);
-      setUserProfile(adminProfile);
-      setIsFirstAdminSetupAvailable(false);
+    const trimmedEmail = email.trim().toLowerCase();
+    let targetUid = `admin_${Date.now()}`;
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, pass);
+      if (cred.user) {
+        targetUid = cred.user.uid;
+        await updateProfile(cred.user, { displayName: name });
+      }
+    } catch {
+      // Fallback to Firestore-backed admin session if Email/Password provider is disabled in Firebase Console
     }
+
+    const adminProfile: UserProfile = {
+      uid: targetUid,
+      email: trimmedEmail,
+      displayName: name.trim(),
+      role: 'admin',
+      phone: phone.trim(),
+      staffPassword: pass,
+      isActive: true,
+      permissions: ['all'],
+      createdAt: new Date().toISOString(),
+    };
+
+    await setDoc(doc(db, 'users', targetUid), adminProfile);
+    localStorage.setItem(STAFF_SESSION_STORAGE_KEY, targetUid);
+    setUserProfile(adminProfile);
+    setCurrentUser(createSessionUserFromProfile(adminProfile));
+    setIsFirstAdminSetupAvailable(false);
   };
 
   const registerStaffMember = async (
@@ -208,55 +382,122 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const trimmedEmail = email.trim().toLowerCase();
+    const normalizedRole: UserRole = role === 'admin' ? 'admin' : 'staff';
     let targetUid = `staff_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    let authNote = '';
 
-    // Check if user already exists in Firestore
-    const existingUsers = await getDocs(
-      query(collection(db, 'users'), where('email', '==', trimmedEmail), limit(1))
+    // Check if user already exists in Firestore (case-insensitive)
+    const allUsersSnap = await getDocs(collection(db, 'users'));
+    const matchingDocs = allUsersSnap.docs.filter(
+      (d) => (d.data().email || '').trim().toLowerCase() === trimmedEmail
     );
-    if (!existingUsers.empty) {
-      throw new Error(`A staff profile for "${trimmedEmail}" is already registered in the system.`);
-    }
+    const existingDoc = matchingDocs[0];
 
-    try {
-      // Use isolated secondary Firebase App instance so the current Admin session is never signed out
-      const secondaryAuth = getSecondaryAuth();
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, pass);
-      targetUid = cred.user.uid;
-      await updateProfile(cred.user, { displayName: name });
-      // Immediately sign out secondary auth so its state is cleared
-      await signOut(secondaryAuth);
-    } catch (authError: any) {
-      const code = authError?.code || '';
-      console.warn('Secondary auth notice:', code, authError?.message);
-      if (code === 'auth/weak-password') {
-        throw new Error('Password is too weak. Please provide a password of at least 6 characters.');
-      } else if (code === 'auth/invalid-email') {
-        throw new Error('The email address format is invalid.');
-      } else if (code === 'auth/email-already-in-use') {
-        authNote = 'Email is already registered in Firebase Authentication; staff profile linked in database.';
-      } else if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
-        authNote = `Staff member "${name}" registered in database! (Staff can sign in with Google using this email, or enable Email/Password under Firebase Console > Authentication).`;
-      } else {
-        authNote = `Staff member "${name}" created in database.`;
+    if (existingDoc) {
+      targetUid = existingDoc.id;
+      // Clean up any duplicate user docs with the same email so old roles cannot conflict
+      for (let i = 1; i < matchingDocs.length; i++) {
+        await deleteDoc(doc(db, 'users', matchingDocs[i].id)).catch(() => {});
+      }
+    } else {
+      try {
+        const secondaryAuth = getSecondaryAuth();
+        const cred = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, pass);
+        targetUid = cred.user.uid;
+        await updateProfile(cred.user, { displayName: name });
+        await signOut(secondaryAuth);
+      } catch (authError: any) {
+        const code = authError?.code || '';
+        if (code === 'auth/weak-password') {
+          throw new Error('Password is too weak. Please provide a password of at least 6 characters.');
+        } else if (code === 'auth/invalid-email') {
+          throw new Error('The email address format is invalid.');
+        }
       }
     }
 
     const profile: UserProfile = {
       uid: targetUid,
       email: trimmedEmail,
-      displayName: name,
-      role,
+      displayName: name.trim(),
+      role: normalizedRole,
       phone: phone ? phone.trim() : '',
+      staffPassword: pass,
       isActive: true,
-      permissions: role === 'admin' ? ['all'] : ['attendance', 'fees', 'students', 'seats'],
-      createdAt: new Date().toISOString(),
+      permissions:
+        normalizedRole === 'admin'
+          ? ['all']
+          : ['attendance', 'fees', 'students', 'seats', 'enquiries'],
+      createdAt: existingDoc ? (existingDoc.data().createdAt || new Date().toISOString()) : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    // Primary admin writes to Firestore
-    await setDoc(doc(db, 'users', targetUid), profile);
 
-    return authNote || `Staff account created successfully for ${name}!`;
+    await setDoc(doc(db, 'users', targetUid), profile, { merge: true });
+
+    return existingDoc
+      ? `Updated "${name}" (${trimmedEmail}) with role "${normalizedRole.toUpperCase()}".`
+      : `Staff account created for "${name}" (${trimmedEmail}) with role "${normalizedRole.toUpperCase()}"!`;
+  };
+
+  const updateStaffRole = async (uid: string, newRole: UserRole) => {
+    const isUserAdmin =
+      isAdmin ||
+      userProfile?.role === 'admin' ||
+      currentUser?.email === 'yoyo.kingdev.yoyo@gmail.com';
+
+    if (!isUserAdmin) {
+      throw new Error('Only administrators can change role permissions.');
+    }
+
+    const normalizedRole: UserRole = newRole === 'admin' ? 'admin' : 'staff';
+    const permissions =
+      normalizedRole === 'admin'
+        ? ['all']
+        : ['attendance', 'fees', 'students', 'seats', 'enquiries'];
+
+    const targetRef = doc(db, 'users', uid);
+    const targetSnap = await getDoc(targetRef);
+    const targetEmail = targetSnap.exists()
+      ? (targetSnap.data().email || '').trim().toLowerCase()
+      : '';
+
+    await setDoc(
+      targetRef,
+      {
+        role: normalizedRole,
+        permissions,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    // Also sync any other user document sharing the same email address
+    if (targetEmail) {
+      const allUsersSnap = await getDocs(collection(db, 'users'));
+      for (const d of allUsersSnap.docs) {
+        if (d.id !== uid && (d.data().email || '').trim().toLowerCase() === targetEmail) {
+          await setDoc(
+            doc(db, 'users', d.id),
+            {
+              role: normalizedRole,
+              permissions,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }
+      }
+    }
+  };
+
+  const updateStaffPassword = async (uid: string, newPass: string) => {
+    if (!newPass || newPass.length < 4) {
+      throw new Error('Password must be at least 4 characters.');
+    }
+    await setDoc(
+      doc(db, 'users', uid),
+      { staffPassword: newPass, updatedAt: new Date().toISOString() },
+      { merge: true }
+    );
   };
 
   const deleteStaffUser = async (uid: string) => {
@@ -275,13 +516,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = async () => {
+    localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     await signInWithPopup(auth, provider);
   };
 
   const logout = async () => {
-    await signOut(auth);
+    localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+    await signOut(auth).catch(() => {});
+    setCurrentUser(null);
     setUserProfile(null);
   };
 
@@ -291,8 +535,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isAdmin = userProfile?.role === 'admin' || currentUser?.email === 'yoyo.kingdev.yoyo@gmail.com';
-  const isStaff = userProfile?.role === 'staff' || isAdmin;
+  const isAdmin = userProfile
+    ? userProfile.role === 'admin' && userProfile.isActive !== false
+    : currentUser?.email === 'yoyo.kingdev.yoyo@gmail.com';
+  const isStaff = Boolean(userProfile?.role === 'staff' || isAdmin);
 
   return (
     <AuthContext.Provider
@@ -306,6 +552,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithEmail,
         registerFirstAdmin,
         registerStaffMember,
+        updateStaffRole,
+        updateStaffPassword,
         deleteStaffUser,
         signInWithGoogle,
         logout,

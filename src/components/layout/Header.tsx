@@ -8,6 +8,8 @@ import {
   CheckCircle,
   AlertTriangle,
   ChevronDown,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useInstitute } from '../../context/InstituteContext';
@@ -31,14 +33,19 @@ export const Header: React.FC<HeaderProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const websiteDomain = settings.website || 'techvisioncomputer.com';
+  const websiteHref = websiteDomain.startsWith('http')
+    ? websiteDomain
+    : `https://${websiteDomain}`;
 
   const tabTitles: Record<NavTab, string> = {
     dashboard: 'Institute Dashboard',
+    enquiries: 'Student Course Enquiries & Admission Form',
     students: 'Student Management & Admissions',
     batches: 'Class Batches & Timetable',
     attendance: 'Daily Student Attendance',
     fees: 'Fee Management & Payment Receipts',
-    seats: 'Computer Lab Workstation Allocation',
+    seats: 'Computer Lab Workstation Allocation (14 PCs)',
     courses: 'Course Catalog & Pricing',
     reports: 'Reports & Data Exports',
     staff: 'Staff Access & Roles',
@@ -71,6 +78,17 @@ export const Header: React.FC<HeaderProps> = ({
               <MapPin className="w-3 h-3" />
               {settings.address ? 'Ahmedabad, Gujarat' : 'Tech Vision Institute'}
             </span>
+            <span className="text-slate-300">•</span>
+            <a
+              href={websiteHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 font-bold text-cyan-700 hover:text-cyan-800 hover:underline transition"
+            >
+              <Globe className="w-3 h-3 text-cyan-600" />
+              {websiteDomain}
+              <ExternalLink className="w-2.5 h-2.5 text-cyan-500" />
+            </a>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3 text-slate-400" />

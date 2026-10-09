@@ -6,6 +6,7 @@ export interface UserProfile {
   displayName: string;
   role: UserRole;
   phone?: string;
+  staffPassword?: string;
   isActive: boolean;
   permissions?: string[];
   createdAt: string;
@@ -16,8 +17,14 @@ export type StudentStatus = 'active' | 'completed' | 'on_hold' | 'inactive';
 
 export interface Student {
   id: string; // firestore doc id
-  studentId: string; // e.g. TV-2026-001
+  studentId: string; // e.g. GR-101 or TV-2026-001
+  grNo?: string; // Student GR.No
   fullName: string;
+  fatherOrHusbandName?: string;
+  fatherOrHusbandProfession?: string;
+  dateOfBirth?: string; // YYYY-MM-DD
+  qualification?: string;
+  aadharCardNo?: string;
   photoUrl?: string;
   mobile: string;
   email?: string;
@@ -25,6 +32,8 @@ export interface Student {
   emergencyContact?: string;
   courseId: string;
   courseName: string;
+  courseIds?: string[]; // Multiple enrolled course IDs
+  courseNames?: string[]; // Multiple enrolled course names
   batchId?: string;
   batchName?: string;
   admissionDate: string; // YYYY-MM-DD
@@ -35,7 +44,11 @@ export interface Student {
   netPayable: number;
   paidAmount: number;
   outstandingBalance: number;
-  assignedSeatId?: string; // e.g. PC-01
+  feeReminderDate?: string; // YYYY-MM-DD (exact 1-month reminder date when fee is remaining)
+  assignedSeatId?: string; // e.g. A-01, B-01
+  courseCompleted?: boolean;
+  certificateIssued?: boolean;
+  certificateIssuedDate?: string;
   status: StudentStatus;
   internalNotes?: string;
   isDemo?: boolean;
@@ -153,6 +166,8 @@ export interface InstituteSettings {
   address: string;
   phone: string;
   email: string;
+  website?: string;
+  logoUrl?: string;
   currency: string;
   totalSeats: number;
   timezone: string;
@@ -164,10 +179,39 @@ export interface InstituteSettings {
 export interface InstituteNotification {
   id: string;
   notificationId: string;
-  type: 'fee_due' | 'unmarked_attendance' | 'low_seats' | 'batch_full' | 'info';
+  type: 'fee_due' | 'unmarked_attendance' | 'low_seats' | 'batch_full' | 'info' | 'enquiry_followup';
   title: string;
   message: string;
   relatedId?: string;
   isRead: boolean;
   createdAt: string;
 }
+
+export type EnquiryStatus = 'new' | 'follow_up' | 'demo_scheduled' | 'converted' | 'closed';
+
+export interface Enquiry {
+  id: string; // firestore doc id
+  enquiryId: string; // e.g. ENQ-2026-001
+  fullName: string;
+  mobile: string;
+  alternatePhone?: string;
+  email?: string;
+  address?: string;
+  qualification?: string; // e.g. 12th Pass, B.Com Student, Working Professional
+  courseId: string;
+  courseName: string;
+  preferredTiming?: string; // e.g. Morning (8:00 AM - 11:00 AM)
+  preferredRow?: string; // e.g. Row A (5 PCs) / Row B (9 PCs) / Any
+  quotedFee: number;
+  source: string; // Walk-in, Phone Call, Referral, Social Media, Pamphlet
+  enquiryDate: string; // YYYY-MM-DD
+  followUpDate?: string; // YYYY-MM-DD
+  status: EnquiryStatus;
+  notes?: string;
+  handledByName?: string;
+  convertedStudentId?: string;
+  isDemo?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+

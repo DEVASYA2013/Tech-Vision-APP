@@ -7,24 +7,36 @@
     </linearGradient>
     <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0b1329" />
+    </linearGradient>
+    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#22d3ee" />
     </linearGradient>
   </defs>
+
+  <!-- App Icon Rounded Background -->
   <rect width="512" height="512" rx="112" fill="url(#bg-grad)" />
-  <rect x="76" y="96" width="360" height="230" rx="20" stroke="url(#tv-grad)" stroke-width="24" fill="#0b1329" />
-  <rect x="100" y="120" width="312" height="182" rx="10" fill="#030712" />
-  
-  <!-- Screen Graphic: Tech Vision Monogram & Graduation Cap -->
-  <path d="M256 148 L324 182 L256 216 L188 182 Z" fill="url(#tv-grad)" />
-  <path d="M212 195 L212 232 C212 248 300 248 300 232 L300 195" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" fill="none" />
-  <path d="M324 182 L334 228" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
-  <circle cx="334" cy="232" r="5" fill="#38bdf8" />
-  
-  <!-- Stand -->
-  <path d="M256 326 L256 384" stroke="url(#tv-grad)" stroke-width="24" stroke-linecap="round" />
-  <path d="M180 396 L332 396" stroke="url(#tv-grad)" stroke-width="24" stroke-linecap="round" />
-  
-  <!-- Sparkles -->
-  <circle cx="130" cy="150" r="4" fill="#38bdf8" />
-  <circle cx="380" cy="150" r="4" fill="#38bdf8" />
+  <rect x="16" y="16" width="480" height="480" rx="98" stroke="#1e293b" stroke-width="4" fill="none" />
+
+  <!-- Outer Emblem Ring -->
+  <circle cx="256" cy="216" r="144" stroke="url(#tv-grad)" stroke-width="10" fill="#060d1f" />
+
+  <!-- Monitor Frame inside Emblem -->
+  <rect x="152" y="132" width="208" height="134" rx="14" stroke="url(#tv-grad)" stroke-width="12" fill="#09152e" />
+
+  <!-- Graduation Cap + TV Monogram inside Screen -->
+  <path d="M256 148 L318 176 L256 204 L194 176 Z" fill="url(#tv-grad)" />
+  <path d="M216 188 L216 214 C216 226 296 226 296 214 L296 188" stroke="#38bdf8" stroke-width="7" stroke-linecap="round" fill="none" />
+  <path d="M318 176 L326 212" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" />
+  <circle cx="326" cy="216" r="4.5" fill="#38bdf8" />
+
+  <!-- Monitor Stand -->
+  <path d="M256 266 L256 302" stroke="url(#tv-grad)" stroke-width="14" stroke-linecap="round" />
+  <path d="M206 306 L306 306" stroke="url(#tv-grad)" stroke-width="14" stroke-linecap="round" />
+
+  <!-- TECH VISION Banner -->
+  <rect x="64" y="380" width="384" height="58" rx="14" fill="url(#tv-grad)" />
+  <text x="256" y="418" text-anchor="middle" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="34" letter-spacing="3">TECH VISION</text>
+  <text x="256" y="466" text-anchor="middle" fill="#38bdf8" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="18" letter-spacing="4">IT EDUCATION</text>
 </svg>

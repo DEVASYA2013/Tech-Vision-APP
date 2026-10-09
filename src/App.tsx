@@ -7,6 +7,7 @@ import { Sidebar, NavTab } from './components/layout/Sidebar';
 import { Login } from './pages/Login';
 import { FirstAdminSetup } from './pages/FirstAdminSetup';
 import { Dashboard } from './pages/Dashboard';
+import { Enquiries } from './pages/Enquiries';
 import { Students } from './pages/Students';
 import { Batches } from './pages/Batches';
 import { Attendance } from './pages/Attendance';
@@ -43,12 +44,36 @@ function useOnlineStatus() {
   return isOnline;
 }
 
+const ADMIN_ONLY_TABS: NavTab[] = ['staff', 'audit', 'settings'];
+
 const MainAppContent: React.FC = () => {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, userProfile, isAdmin, loading } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showFirstAdminView, setShowFirstAdminView] = useState(false);
   const isOnline = useOnlineStatus();
+
+  // Reset tab to dashboard whenever user account changes (e.g. switching from Admin to Staff)
+  React.useEffect(() => {
+    setCurrentTab('dashboard');
+  }, [currentUser?.uid]);
+
+  // Immediately redirect away from admin-only tabs (such as Staff Management) if user role is Staff
+  React.useEffect(() => {
+    if (!loading && currentUser && (!isAdmin || userProfile?.role === 'staff')) {
+      if (ADMIN_ONLY_TABS.includes(currentTab)) {
+        setCurrentTab('dashboard');
+      }
+    }
+  }, [loading, currentUser, isAdmin, userProfile?.role, currentTab]);
+
+  const handleSelectTab = (tab: NavTab) => {
+    if (ADMIN_ONLY_TABS.includes(tab) && (!isAdmin || userProfile?.role === 'staff')) {
+      setCurrentTab('dashboard');
+      return;
+    }
+    setCurrentTab(tab);
+  };
 
   // Loading Screen
   if (loading) {
@@ -88,7 +113,7 @@ const MainAppContent: React.FC = () => {
           {/* Sidebar */}
           <Sidebar
             currentTab={currentTab}
-            setCurrentTab={setCurrentTab}
+            setCurrentTab={handleSelectTab}
             isMobileOpen={isMobileOpen}
             setIsMobileOpen={setIsMobileOpen}
           />
@@ -97,17 +122,18 @@ const MainAppContent: React.FC = () => {
           <div className="flex-1 flex flex-col min-w-0 md:pl-64">
             <Header
               currentTab={currentTab}
-              setCurrentTab={setCurrentTab}
+              setCurrentTab={handleSelectTab}
               setIsMobileOpen={setIsMobileOpen}
             />
 
             <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto pb-16">
               {currentTab === 'dashboard' && (
                 <Dashboard
-                  onNavigate={(tab) => setCurrentTab(tab)}
-                  onOpenAddStudent={() => setCurrentTab('students')}
+                  onNavigate={(tab) => handleSelectTab(tab)}
+                  onOpenAddStudent={() => handleSelectTab('students')}
                 />
               )}
+              {currentTab === 'enquiries' && <Enquiries />}
               {currentTab === 'students' && <Students />}
               {currentTab === 'batches' && <Batches />}
               {currentTab === 'attendance' && <Attendance />}
@@ -115,11 +141,11 @@ const MainAppContent: React.FC = () => {
               {currentTab === 'seats' && <SeatManagement />}
               {currentTab === 'courses' && <Courses />}
               {currentTab === 'reports' && <Reports />}
-              {currentTab === 'staff' && <StaffManagement />}
+              {currentTab === 'staff' && isAdmin && userProfile?.role === 'admin' && <StaffManagement />}
               {currentTab === 'ai' && <AIAssistant />}
               {currentTab === 'google' && <GoogleIntegrations />}
-              {currentTab === 'audit' && <AuditLogs />}
-              {currentTab === 'settings' && <InstituteSettings />}
+              {currentTab === 'audit' && isAdmin && userProfile?.role === 'admin' && <AuditLogs />}
+              {currentTab === 'settings' && isAdmin && userProfile?.role === 'admin' && <InstituteSettings />}
               {currentTab === 'backup' && <HelpBackup />}
             </main>
           </div>

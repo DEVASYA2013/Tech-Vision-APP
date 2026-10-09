@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { GraduationCap, Mail, Lock, LogIn, ArrowRight } from 'lucide-react';
+import { GraduationCap, Mail, Lock, LogIn, ArrowRight, Globe, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
+import { PWAInstallButton } from '../components/pwa/PWAInstallButton';
 
 interface LoginProps {
   onOpenFirstAdmin: () => void;
@@ -14,11 +15,15 @@ export const Login: React.FC<LoginProps> = ({ onOpenFirstAdmin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError('');
     if (!email || !password) {
-      showToast('Please enter both email and password.', 'error');
+      const msg = 'Please enter both email and password.';
+      setLoginError(msg);
+      showToast(msg, 'error');
       return;
     }
     setLoading(true);
@@ -26,24 +31,9 @@ export const Login: React.FC<LoginProps> = ({ onOpenFirstAdmin }) => {
       await signInWithEmail(email, password);
       showToast('Signed in successfully!', 'success');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid credentials';
-      if (msg.includes('operation-not-allowed')) {
-        showToast(
-          'Email/Password sign-in is not enabled in Firebase Console. Please use "Google Workspace Account" button below to log in instantly.',
-          'error'
-        );
-      } else if (
-        msg.includes('user-not-found') ||
-        msg.includes('wrong-password') ||
-        msg.includes('invalid-credential')
-      ) {
-        showToast(
-          'No account found with this email/password. Please click "First Administrator Setup" below or sign in with Google.',
-          'error'
-        );
-      } else {
-        showToast(msg, 'error');
-      }
+      const msg = err instanceof Error ? err.message : 'Invalid email or password';
+      setLoginError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -71,18 +61,35 @@ export const Login: React.FC<LoginProps> = ({ onOpenFirstAdmin }) => {
       <div className="relative w-full max-w-md bg-white rounded-3xl p-7 sm:p-10 shadow-2xl border border-slate-100">
         {/* Brand Logo & Name */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-700 text-white shadow-xl shadow-cyan-900/30 mb-4">
-            <GraduationCap className="w-9 h-9" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-slate-950 p-1.5 shadow-xl shadow-cyan-900/30 border border-slate-800 mb-3">
+            <img
+              src={localStorage.getItem('tv_custom_logo') || '/pwa-192x192.png'}
+              alt="Tech Vision Computer Class Logo"
+              className="w-full h-full rounded-xl object-contain"
+            />
           </div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">
             TECH VISION
           </h2>
           <p className="text-xs uppercase tracking-widest font-bold text-cyan-600 mt-0.5">
-            COMPUTER CLASS • AHMEDABAD
+            COMPUTER CLASS • IT EDUCATION
           </p>
+          <a
+            href="https://techvisioncomputer.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-[11px] font-bold transition"
+          >
+            <Globe className="w-3 h-3 text-cyan-600" />
+            techvisioncomputer.com
+            <ExternalLink className="w-2.5 h-2.5 text-cyan-600" />
+          </a>
           <p className="text-xs text-slate-500 mt-2">
             Secure Management Portal for Staff & Administration
           </p>
+          <div className="mt-3 flex justify-center">
+            <PWAInstallButton />
+          </div>
         </div>
 
         {/* Primary 1-Click Google Sign-in */}
@@ -132,6 +139,11 @@ export const Login: React.FC<LoginProps> = ({ onOpenFirstAdmin }) => {
 
         {/* Email & Password Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
+          {loginError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-medium leading-relaxed">
+              {loginError}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Staff Email Address

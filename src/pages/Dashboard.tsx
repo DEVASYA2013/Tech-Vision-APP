@@ -19,10 +19,23 @@ import {
   AlertCircle,
   Activity,
   Award,
+  ClipboardList,
+  Trash2,
+  RotateCcw,
+  BellRing,
+  Phone,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
-import { formatINR, formatDate, getTodayDateString, getCurrentMonthName } from '../utils/formatters';
+import {
+  formatINR,
+  formatDate,
+  getTodayDateString,
+  getCurrentMonthName,
+  getStudentFeeReminderInfo,
+} from '../utils/formatters';
 import { NavTab } from '../components/layout/Sidebar';
+import { useToast } from '../components/ui/Toast';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 interface DashboardProps {
   onNavigate: (tab: NavTab) => void;
@@ -38,7 +51,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
     payments,
     attendanceSheets,
     auditLogs,
+    deleteFeePayment,
+    clearAllFeeHistoryAndResetBalances,
+    resetAllStudentsAndFees,
   } = useInstitute();
+  const { showToast } = useToast();
+  const [isClearFeesModalOpen, setIsClearFeesModalOpen] = React.useState(false);
+  const [isResetAllModalOpen, setIsResetAllModalOpen] = React.useState(false);
 
   const today = getTodayDateString();
 
@@ -72,9 +91,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
     .reduce((acc, p) => acc + (p.amount || 0), 0);
 
   // 4. Computer Seats calculations (Tech Vision Classroom: 14 Computers)
-  const totalSeatsCount = seats.length || 14;
+  const totalSeatsCount = 14;
   const occupiedSeatsCount = seats.filter((s) => s.status === 'occupied').length;
-  const availableSeatsCount = seats.filter((s) => s.status === 'available').length;
+  const availableSeatsCount = seats.filter((s) => s.status === 'available').length || Math.max(0, 14 - occupiedSeatsCount);
+  const rowASeats = seats.filter((s) => s.seatNumber.startsWith('A-'));
+  const rowBSeats = seats.filter((s) => s.seatNumber.startsWith('B-'));
 
   // 5. Courses & Staff calculations
   const activeCoursesCount = courses.filter((c) => c.isActive).length;
@@ -91,10 +112,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
     courseCounts[name] = (courseCounts[name] || 0) + 1;
   });
 
-  // Recent data
+  // Recent data & 1-Month Fee Reminders
   const recentStudents = [...students].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   const recentPayments = [...payments].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
-  const studentsWithPendingFees = activeStudents.filter((s) => (s.outstandingBalance || 0) > 0).slice(0, 5);
+
+  const pendingFeeStudentsWithReminder = activeStudents
+    .filter((s) => (s.outstandingBalance || 0) > 0)
+    .map((s) => ({
+      student: s,
+      reminder: getStudentFeeReminderInfo(s, payments, today),
+    }))
+    .sort((a, b) => a.reminder.daysUntilReminder - b.reminder.daysUntilReminder);
+
+  const oneMonthDueReminders = pendingFeeStudentsWithReminder.filter(
+    (item) => item.reminder.isReminderDue
+  );
+  const studentsWithPendingFees = pendingFeeStudentsWithReminder.slice(0, 6);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-300">
@@ -115,6 +148,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
 
         {/* Quick Actions */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            onClick={() => onNavigate('enquiries')}
+            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold transition flex items-center gap-1.5 shadow-md shadow-amber-900/20 cursor-pointer"
+          >
+            <ClipboardList className="w-4 h-4" />
+            Enquiry Form
+          </button>
           <button
             onClick={onOpenAddStudent}
             className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-cyan-900/30 cursor-pointer"
@@ -138,6 +178,79 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
           </button>
         </div>
       </div>
+
+      {/* 1-Month Fee Reminder Banner (Triggers when 1 month has passed and fee is still remaining) */}
+      {oneMonthDueReminders.length > 0 && (
+        <div className="p-5 rounded-2xl bg-rose-50 border-2 border-rose-300 shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-600 text-white shrink-0 shadow-xs">
+                <BellRing className="w-5 h-5 animate-bounce" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-rose-950 uppercase tracking-tight">
+                    1-Month Fee Collection Reminder ({oneMonthDueReminders.length}{' '}
+                    {oneMonthDueReminders.length === 1 ? 'Student' : 'Students'} Due)
+                  </h3>
+                </div>
+                <p className="text-xs text-rose-800 mt-0.5">
+                  The following students have completed 1 full month since admission or last fee payment and still have remaining fees due.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate('fees')}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4" />
+              Open Fee Collection
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {oneMonthDueReminders.map(({ student: s, reminder }) => (
+              <div
+                key={s.id}
+                className="p-3 rounded-xl bg-white border border-rose-200 flex items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[10px] font-black text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200">
+                      {s.grNo || s.studentId}
+                    </span>
+                    <span className="font-bold text-xs text-slate-900 truncate">{s.fullName}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 mt-0.5 truncate">
+                    {s.courseName} {s.batchName ? `• ${s.batchName}` : ''}
+                  </div>
+                  <div className="text-[10px] text-rose-700 font-semibold mt-1 flex items-center gap-2">
+                    <span>Admitted: {formatDate(s.admissionDate)}</span>
+                    <span>•</span>
+                    <span>1-Mo Due: {formatDate(reminder.reminderDate)}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-slate-400" />
+                    {s.mobile}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs font-black text-rose-600">
+                    {formatINR(s.outstandingBalance)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Remaining</div>
+                  <button
+                    onClick={() => onNavigate('fees')}
+                    className="mt-1.5 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition cursor-pointer"
+                  >
+                    Collect
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 12 Stat Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4">
@@ -228,13 +341,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
         {/* Card 8: Total Computer Seats */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Total PC Lab Seats</span>
+            <span>Total Lab PCs</span>
             <div className="p-1.5 rounded-lg bg-cyan-50 text-cyan-600">
               <Monitor className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 text-2xl font-black text-slate-900">{totalSeatsCount}</div>
-          <div className="text-[11px] text-slate-400 mt-1">Configured stations</div>
+          <div className="text-[11px] text-slate-400 mt-1">5 in Row A • 9 in Row B</div>
         </div>
 
         {/* Card 9: Occupied Seats */}
@@ -392,40 +505,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
         <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Lab Workstations</h3>
-              <p className="text-xs text-slate-400 mt-0.5">{occupiedSeatsCount} of {totalSeatsCount} Occupied</p>
+              <h3 className="font-bold text-slate-900 text-sm">14-Computer Lab Status</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {occupiedSeatsCount} of 14 Occupied (Row A: 5 • Row B: 9)
+              </p>
             </div>
             <button
               onClick={() => onNavigate('seats')}
-              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1"
+              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1 cursor-pointer"
             >
               Lab Layout
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Quick mini-grid of PC seats */}
-          <div className="mt-4 grid grid-cols-5 gap-2">
-            {seats.slice(0, 15).map((seat) => (
-              <div
-                key={seat.seatNumber}
-                className={`p-2 rounded-lg text-center text-xs font-bold border transition ${
-                  seat.status === 'occupied'
-                    ? 'bg-blue-50 border-blue-200 text-blue-800'
-                    : seat.status === 'available'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-slate-100 border-slate-200 text-slate-500'
-                }`}
-                title={`${seat.seatNumber}: ${seat.status.toUpperCase()} ${seat.assignedStudentName ? `(${seat.assignedStudentName})` : ''}`}
-              >
-                {seat.seatNumber.replace('PC-', '')}
+          {/* Quick mini-grid of 14 PC seats by Row A (5) & Row B (9) */}
+          <div className="mt-3 space-y-2.5">
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Row A (5 Computers)
               </div>
-            ))}
+              <div className="grid grid-cols-5 gap-1.5">
+                {(rowASeats.length > 0 ? rowASeats : seats.slice(0, 5)).map((seat) => (
+                  <div
+                    key={seat.seatNumber}
+                    className={`py-1.5 px-1 rounded-lg text-center text-[11px] font-bold border transition ${
+                      seat.status === 'occupied'
+                        ? 'bg-blue-50 border-blue-200 text-blue-800'
+                        : seat.status === 'available'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-slate-100 border-slate-200 text-slate-500'
+                    }`}
+                    title={`${seat.seatNumber}: ${seat.status.toUpperCase()} ${seat.assignedStudentName ? `(${seat.assignedStudentName})` : ''}`}
+                  >
+                    {seat.seatNumber}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Row B (9 Computers)
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {(rowBSeats.length > 0 ? rowBSeats : seats.slice(5, 14)).map((seat) => (
+                  <div
+                    key={seat.seatNumber}
+                    className={`py-1.5 px-1 rounded-lg text-center text-[11px] font-bold border transition ${
+                      seat.status === 'occupied'
+                        ? 'bg-blue-50 border-blue-200 text-blue-800'
+                        : seat.status === 'available'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-slate-100 border-slate-200 text-slate-500'
+                    }`}
+                    title={`${seat.seatNumber}: ${seat.status.toUpperCase()} ${seat.assignedStudentName ? `(${seat.assignedStudentName})` : ''}`}
+                  >
+                    {seat.seatNumber}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <p className="mt-4 text-[11px] text-slate-500 flex items-center justify-between">
+          <p className="mt-3 text-[11px] text-slate-500 flex items-center justify-between">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Available</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> Occupied</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-400" /> Inactive</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-400" /> Maintenance</span>
           </p>
         </div>
       </div>
@@ -439,13 +584,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
               <h3 className="font-bold text-slate-900 text-sm">Recent Student Registrations</h3>
               <p className="text-xs text-slate-400 mt-0.5">Latest enrollments</p>
             </div>
-            <button
-              onClick={() => onNavigate('students')}
-              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1"
-            >
-              View All
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {(students.length > 0 || payments.length > 0) && (
+                <button
+                  onClick={() => setIsResetAllModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                  title="Reset all students and their fees"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Reset Students & Fees
+                </button>
+              )}
+              <button
+                onClick={() => onNavigate('students')}
+                className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1 cursor-pointer"
+              >
+                View All
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 divide-y divide-slate-100">
@@ -481,13 +638,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
               <h3 className="font-bold text-slate-900 text-sm">Recent Fee Collections</h3>
               <p className="text-xs text-slate-400 mt-0.5">Payment receipts recorded</p>
             </div>
-            <button
-              onClick={() => onNavigate('fees')}
-              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1"
-            >
-              Fee Register
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {payments.length > 0 && (
+                <button
+                  onClick={() => setIsClearFeesModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                  title="Delete all recent fee collections and reset student balances"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Clear Fee History
+                </button>
+              )}
+              <button
+                onClick={() => onNavigate('fees')}
+                className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1 cursor-pointer"
+              >
+                Fee Register
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 divide-y divide-slate-100">
@@ -504,9 +673,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
                       {p.receiptNo} • {p.paymentMethod.toUpperCase()}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-extrabold text-emerald-600">{formatINR(p.amount)}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{formatDate(p.paymentDate)}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="font-extrabold text-emerald-600">{formatINR(p.amount)}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">{formatDate(p.paymentDate)}</div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await deleteFeePayment(p.id);
+                        showToast(`Deleted receipt ${p.receiptNo} from fee history.`, 'info');
+                      }}
+                      className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition cursor-pointer"
+                      title="Delete this fee record"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))
@@ -517,21 +698,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
 
       {/* Outstanding Fees Watchlist & Audit Feeds */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Outstanding Fees Watchlist */}
+        {/* Outstanding Fees Watchlist & 1-Month Reminders */}
         <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                 <AlertCircle className="w-4 h-4 text-rose-500" />
-                Students With Overdue Fees
+                Remaining Fees & 1-Month Reminders
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">Priority collection reminders</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Automatic reminder exactly 1 month after admission / payment
+              </p>
             </div>
             <button
               onClick={() => onNavigate('fees')}
-              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700"
+              className="text-xs font-semibold text-cyan-600 hover:text-cyan-700 cursor-pointer"
             >
-              Collect
+              Collect Fees
             </button>
           </div>
 
@@ -541,15 +724,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
                 No pending or overdue fees! All active students are fully paid.
               </div>
             ) : (
-              studentsWithPendingFees.map((s) => (
-                <div key={s.id} className="py-3 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900">{s.fullName}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {s.courseName} • Phone: {s.mobile}
+              studentsWithPendingFees.map(({ student: s, reminder }) => (
+                <div key={s.id} className="py-3 flex items-center justify-between text-xs gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-bold text-cyan-800">
+                        {s.grNo || s.studentId}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="font-bold text-slate-900 truncate">{s.fullName}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {s.courseName} · Phone: {s.mobile}
+                    </div>
+                    <div
+                      className={`text-[10px] font-bold mt-1 ${
+                        reminder.isReminderDue
+                          ? 'text-rose-600'
+                          : reminder.isUpcomingSoon
+                          ? 'text-amber-600'
+                          : 'text-cyan-700'
+                      }`}
+                    >
+                      {reminder.isReminderDue
+                        ? `🔔 1-Month Reminder Due (${formatDate(reminder.reminderDate)})`
+                        : `1-Month Reminder: ${formatDate(reminder.reminderDate)} (in ${reminder.daysUntilReminder}d)`}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <div className="font-extrabold text-rose-600">{formatINR(s.outstandingBalance)}</div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
                       Paid: {formatINR(s.paidAmount)} / {formatINR(s.netPayable)}
@@ -600,6 +802,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
           </div>
         </div>
       </div>
+
+      {/* Confirm Clear Fee History */}
+      <ConfirmDialog
+        isOpen={isClearFeesModalOpen}
+        onClose={() => setIsClearFeesModalOpen(false)}
+        onConfirm={async () => {
+          await clearAllFeeHistoryAndResetBalances();
+          showToast('All recent fee collections and fee history deleted! Student paid fees reset to ₹0.', 'success');
+          setIsClearFeesModalOpen(false);
+        }}
+        title="Clear All Recent Fee Collections & History"
+        message="This will permanently delete all fee collection records and reset every student's paid fee balance to ₹0. Continue?"
+        confirmText="Delete Fee History"
+        isDestructive
+      />
+
+      {/* Confirm Reset Students & Fees */}
+      <ConfirmDialog
+        isOpen={isResetAllModalOpen}
+        onClose={() => setIsResetAllModalOpen(false)}
+        onConfirm={async () => {
+          await resetAllStudentsAndFees();
+          showToast('All students and fee records have been completely reset!', 'success');
+          setIsResetAllModalOpen(false);
+        }}
+        title="Reset All Students & Fees"
+        message="This will delete all student records, remove all recent fee collections and fee history, and free all 14 computer workstations. Continue?"
+        confirmText="Reset Students & Fees"
+        isDestructive
+      />
     </div>
   );
 };

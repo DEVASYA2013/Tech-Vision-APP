@@ -16,18 +16,35 @@ import {
   FileText,
   Calendar,
   User,
+  Trash2,
+  BellRing,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
 import { useAuth } from '../context/AuthContext';
 import { FeePayment, PaymentMethod } from '../types';
-import { formatINR, formatDate, numberToWordsINR, getTodayDateString } from '../utils/formatters';
+import {
+  formatINR,
+  formatDate,
+  numberToWordsINR,
+  getTodayDateString,
+  getStudentFeeReminderInfo,
+} from '../utils/formatters';
 import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 export const FeeManagement: React.FC = () => {
-  const { students, payments, settings, recordFeePayment, reverseFeePayment } = useInstitute();
+  const {
+    students,
+    payments,
+    settings,
+    recordFeePayment,
+    reverseFeePayment,
+    deleteFeePayment,
+    clearAllFeeHistoryAndResetBalances,
+    resetAllStudentsAndFees,
+  } = useInstitute();
   const { isAdmin } = useAuth();
   const { showToast } = useToast();
 
@@ -40,11 +57,15 @@ export const FeeManagement: React.FC = () => {
   const [selectedReceiptForPrint, setSelectedReceiptForPrint] = useState<FeePayment | null>(null);
   const [reversalTarget, setReversalTarget] = useState<FeePayment | null>(null);
   const [reversalReason, setReversalReason] = useState('');
+  const [deletePaymentTarget, setDeletePaymentTarget] = useState<FeePayment | null>(null);
+  const [isClearFeeHistoryOpen, setIsClearFeeHistoryOpen] = useState(false);
+  const [isFullResetOpen, setIsFullResetOpen] = useState(false);
   const [whatsappStudent, setWhatsappStudent] = useState<typeof students[0] | null>(null);
   const [copiedDraft, setCopiedDraft] = useState(false);
 
   // New Payment Form
   const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [modalStudentSearch, setModalStudentSearch] = useState('');
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   const [transactionRef, setTransactionRef] = useState('');
@@ -52,11 +73,28 @@ export const FeeManagement: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Active student for recording
-  const selectedStudentObj = students.find((s) => s.studentId === selectedStudentId);
+  const selectedStudentObj = students.find(
+    (s) => s.studentId === selectedStudentId || s.grNo === selectedStudentId
+  );
+
+  // Filter students inside Record Payment modal by Name, GR.No, or Batch Time
+  const modalFilteredStudents = useMemo(() => {
+    const q = modalStudentSearch.toLowerCase().trim();
+    if (!q) return students;
+    return students.filter((s) => {
+      const gr = (s.grNo || s.studentId || '').toLowerCase();
+      const name = s.fullName.toLowerCase();
+      const batch = (s.batchName || '').toLowerCase();
+      const mobile = s.mobile.toLowerCase();
+      return gr.includes(q) || name.includes(q) || batch.includes(q) || mobile.includes(q);
+    });
+  }, [students, modalStudentSearch]);
 
   const handleOpenRecordModal = (studentId = '') => {
-    setSelectedStudentId(studentId || students[0]?.studentId || '');
-    const firstStudent = students.find((s) => s.studentId === (studentId || students[0]?.studentId));
+    setModalStudentSearch('');
+    const targetId = studentId || students[0]?.studentId || '';
+    setSelectedStudentId(targetId);
+    const firstStudent = students.find((s) => s.studentId === targetId || s.grNo === targetId);
     setPaymentAmount(firstStudent?.outstandingBalance || 1000);
     setPaymentMethod('upi');
     setTransactionRef('');
@@ -66,7 +104,7 @@ export const FeeManagement: React.FC = () => {
 
   const handleStudentSelect = (sId: string) => {
     setSelectedStudentId(sId);
-    const found = students.find((s) => s.studentId === sId);
+    const found = students.find((s) => s.studentId === sId || s.grNo === sId);
     if (found && found.outstandingBalance > 0) {
       setPaymentAmount(found.outstandingBalance);
     }
@@ -121,19 +159,94 @@ export const FeeManagement: React.FC = () => {
     }
   };
 
-  // Filtered Payments
+  const handleConfirmDeleteSinglePayment = async () => {
+    if (!deletePaymentTarget) return;
+    try {
+      await deleteFeePayment(deletePaymentTarget.id);
+      showToast(`Receipt ${deletePaymentTarget.receiptNo} permanently deleted from history.`, 'info');
+      setDeletePaymentTarget(null);
+    } catch {
+      showToast('Error deleting payment receipt.', 'error');
+    }
+  };
+
+  const handleConfirmClearFeeHistory = async () => {
+    try {
+      await clearAllFeeHistoryAndResetBalances();
+      showToast('All fee collection history deleted & student fee balances reset to ₹0 paid!', 'success');
+      setIsClearFeeHistoryOpen(false);
+    } catch {
+      showToast('Error clearing fee history.', 'error');
+    }
+  };
+
+  const handleConfirmFullReset = async () => {
+    try {
+      await resetAllStudentsAndFees();
+      showToast('All students, fee collections, and fee history have been completely reset!', 'success');
+      setIsFullResetOpen(false);
+    } catch {
+      showToast('Error resetting students and fees.', 'error');
+    }
+  };
+
+  // Filtered Payments (search by Student Name, GR.No, Batch time, or Receipt No)
   const filteredPayments = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
     return payments.filter((p) => {
+      const linkedStudent = students.find(
+        (s) => s.studentId === p.studentId || s.grNo === p.studentId
+      );
+      const batchName = (linkedStudent?.batchName || '').toLowerCase();
+      const grNo = (linkedStudent?.grNo || p.studentId || '').toLowerCase();
       const matchesSearch =
-        p.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.receiptNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.transactionRef && p.transactionRef.toLowerCase().includes(searchTerm.toLowerCase()));
+        !q ||
+        p.studentName.toLowerCase().includes(q) ||
+        grNo.includes(q) ||
+        p.studentId.toLowerCase().includes(q) ||
+        batchName.includes(q) ||
+        p.receiptNo.toLowerCase().includes(q) ||
+        (p.transactionRef && p.transactionRef.toLowerCase().includes(q));
 
       const matchesMode = filterMode === 'all' || p.paymentMethod === filterMode;
       return matchesSearch && matchesMode;
     });
-  }, [payments, searchTerm, filterMode]);
+  }, [payments, students, searchTerm, filterMode]);
+
+  // Quick Student Fee Lookup (search by Name, GR.No, or Batch time to pay fees in 1 click)
+  const todayStr = getTodayDateString();
+  const studentsWithReminderList = useMemo(() => {
+    return students
+      .filter((s) => s.status === 'active' && (s.outstandingBalance || 0) > 0)
+      .map((s) => ({
+        student: s,
+        reminder: getStudentFeeReminderInfo(s, payments, todayStr),
+      }))
+      .sort((a, b) => a.reminder.daysUntilReminder - b.reminder.daysUntilReminder);
+  }, [students, payments, todayStr]);
+
+  const oneMonthDueCount = useMemo(
+    () => studentsWithReminderList.filter((item) => item.reminder.isReminderDue).length,
+    [studentsWithReminderList]
+  );
+
+  const matchingStudentsForFeePay = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    return students
+      .filter((s) => {
+        if (!q) return s.outstandingBalance > 0;
+        const gr = (s.grNo || s.studentId || '').toLowerCase();
+        const name = s.fullName.toLowerCase();
+        const batch = (s.batchName || '').toLowerCase();
+        return gr.includes(q) || name.includes(q) || batch.includes(q) || s.mobile.includes(q);
+      })
+      .map((s) => ({
+        student: s,
+        reminder: getStudentFeeReminderInfo(s, payments, todayStr),
+      }))
+      .sort((a, b) => a.reminder.daysUntilReminder - b.reminder.daysUntilReminder)
+      .slice(0, 12);
+  }, [students, payments, searchTerm, todayStr]);
 
   // Overall Financial Totals
   const totalCollected = payments.filter((p) => !p.isReversal).reduce((acc, p) => acc + p.amount, 0);
@@ -170,7 +283,8 @@ export const FeeManagement: React.FC = () => {
 
   // WhatsApp Fee Reminder Draft
   const generateFeeReminderText = (s: typeof students[0]) => {
-    return `Hello ${s.fullName},\n\nGreetings from ${settings.instituteName || 'Tech Vision Computer Class'}, Ahmedabad.\n\nThis is a polite reminder regarding your course fee for ${s.courseName}.\n\n• Agreed Fee: ₹${s.netPayable}\n• Paid Amount: ₹${s.paidAmount}\n• Remaining Balance: ₹${s.outstandingBalance}\n\nPlease clear the pending installment at the institute counter or via UPI at your earliest convenience.\n\nThank you!\nTech Vision Computer Class\nPhone: ${settings.phone}`;
+    const info = getStudentFeeReminderInfo(s, payments, todayStr);
+    return `Hello ${s.fullName} (GR.No: ${s.grNo || s.studentId}),\n\nGreetings from ${settings.instituteName || 'Tech Vision Computer Class'}, Ahmedabad.\n\nThis is your 1-month fee reminder regarding your enrolled course: ${s.courseName}.\n\n• Admission Date: ${formatDate(s.admissionDate)}\n• 1-Month Fee Due Date: ${formatDate(info.reminderDate)}\n• Total Net Fee: ₹${s.netPayable}\n• Paid Amount: ₹${s.paidAmount}\n• Remaining Fee Balance: ₹${s.outstandingBalance}\n\nPlease clear the remaining fee at the institute counter or via UPI at your earliest convenience.\n\nThank you!\nTech Vision Computer Class\nPhone: ${settings.phone}`;
   };
 
   const copyToClipboard = (text: string) => {
@@ -194,7 +308,27 @@ export const FeeManagement: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {(payments.length > 0 || students.some((s) => s.paidAmount > 0)) && (
+            <button
+              onClick={() => setIsClearFeeHistoryOpen(true)}
+              className="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Delete all fee receipts and reset student paid balances to ₹0"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Clear Fee History & Reset Balances
+            </button>
+          )}
+          {(payments.length > 0 || students.length > 0) && (
+            <button
+              onClick={() => setIsFullResetOpen(true)}
+              className="px-3.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Delete all students, delete all fee history, and free all 14 computers"
+            >
+              <Trash2 className="w-4 h-4" />
+              Reset All Students & Fees
+            </button>
+          )}
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -213,7 +347,7 @@ export const FeeManagement: React.FC = () => {
       </div>
 
       {/* Financial Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
             <span>Total Collected Till Date</span>
@@ -227,13 +361,46 @@ export const FeeManagement: React.FC = () => {
 
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
-            <span>Total Outstanding Dues</span>
+            <span>Total Remaining Fees</span>
             <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 text-2xl font-black text-rose-600">{formatINR(totalOutstanding)}</div>
-          <div className="text-[11px] text-slate-400 mt-1">Pending student balances</div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            Across {studentsWithReminderList.length} active student(s)
+          </div>
+        </div>
+
+        <div
+          className={`p-5 rounded-2xl border shadow-xs ${
+            oneMonthDueCount > 0
+              ? 'bg-rose-50/70 border-rose-200'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-slate-600 font-semibold">
+            <span>1-Month Fee Reminders Due</span>
+            <div
+              className={`p-1.5 rounded-lg ${
+                oneMonthDueCount > 0
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-amber-50 text-amber-600'
+              }`}
+            >
+              <BellRing className="w-4 h-4" />
+            </div>
+          </div>
+          <div
+            className={`mt-2 text-2xl font-black ${
+              oneMonthDueCount > 0 ? 'text-rose-600' : 'text-slate-900'
+            }`}
+          >
+            {oneMonthDueCount}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Remind exactly 1 month after admission/payment
+          </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
@@ -267,7 +434,7 @@ export const FeeManagement: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by student name, ID, receipt number, or UPI ref..."
+              placeholder="Search student by Name, GR.No, or Batch Time (or Receipt No) to pay fees..."
               className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:bg-white"
             />
           </div>
@@ -287,6 +454,76 @@ export const FeeManagement: React.FC = () => {
             </select>
           </div>
         </div>
+
+        {/* Quick Student Fee Pay Results by GR.No, Name, or Batch Time + 1-Month Fee Reminder */}
+        {matchingStudentsForFeePay.length > 0 && (
+          <div className="pt-2 border-t border-slate-100">
+            <div className="text-[11px] font-bold text-slate-600 mb-2 flex items-center justify-between">
+              <span>
+                {searchTerm
+                  ? `Matching Students for "${searchTerm}" (Click Pay Fees or Remind)`
+                  : 'Students with Remaining Fees & 1-Month Reminder Schedule (Sorted by Due Date)'}
+              </span>
+              <span className="text-slate-400">{matchingStudentsForFeePay.length} shown</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {matchingStudentsForFeePay.map(({ student: st, reminder }) => (
+                <div
+                  key={st.id}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-2 transition ${
+                    reminder.isReminderDue
+                      ? 'bg-rose-50/70 border-rose-300 hover:border-rose-400'
+                      : 'bg-slate-50 border-slate-200 hover:border-emerald-300'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-900 font-mono text-[10px] font-black">
+                        {st.grNo || st.studentId}
+                      </span>
+                      <span className="font-bold text-slate-900 text-xs truncate">
+                        {st.fullName}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                      {st.batchName || st.courseName} • {st.mobile}
+                    </div>
+                    <div className="text-[10px] font-bold text-rose-600 mt-0.5">
+                      Remaining: {formatINR(st.outstandingBalance)} • Paid: {formatINR(st.paidAmount)}
+                    </div>
+                    <div
+                      className={`text-[10px] font-semibold mt-0.5 ${
+                        reminder.isReminderDue ? 'text-rose-700 font-extrabold' : 'text-cyan-700'
+                      }`}
+                    >
+                      {reminder.isReminderDue
+                        ? `🔔 1-Month Reminder Due (${formatDate(reminder.reminderDate)})`
+                        : `Remind after 1 Mo: ${formatDate(reminder.reminderDate)} (${reminder.daysUntilReminder}d)`}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRecordModal(st.studentId)}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer transition"
+                    >
+                      Pay Fees
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappStudent(st)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
+                      title="Send 1-Month Fee Reminder message"
+                    >
+                      <Share2 className="w-3 h-3 text-emerald-600" />
+                      Remind
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Transactions Table */}
@@ -360,23 +597,30 @@ export const FeeManagement: React.FC = () => {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => setSelectedReceiptForPrint(p)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 transition"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 transition cursor-pointer"
                           title="Print Receipt"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
-                        {isAdmin && !p.isReversal && (
+                        {!p.isReversal && (
                           <button
                             onClick={() => {
                               setReversalTarget(p);
-                              setReversalReason('');
+                              setReversalReason('Reversed by user');
                             }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition cursor-pointer"
                             title="Reverse Payment"
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
                         )}
+                        <button
+                          onClick={() => setDeletePaymentTarget(p)}
+                          className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                          title="Delete Receipt from History"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -398,16 +642,45 @@ export const FeeManagement: React.FC = () => {
         <form onSubmit={handleRecordPayment} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Select Student *
+              Search Student by GR.No, Student Name, or Batch Time
+            </label>
+            <div className="relative mb-2">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={modalStudentSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setModalStudentSearch(val);
+                  const q = val.toLowerCase().trim();
+                  if (q) {
+                    const firstMatch = students.find(
+                      (s) =>
+                        (s.grNo || s.studentId).toLowerCase().includes(q) ||
+                        s.fullName.toLowerCase().includes(q) ||
+                        (s.batchName || '').toLowerCase().includes(q)
+                    );
+                    if (firstMatch) {
+                      handleStudentSelect(firstMatch.studentId);
+                    }
+                  }
+                }}
+                placeholder="Type GR.No (e.g. GR-101), Student Name, or Batch Time (e.g. 08:00 AM)..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+              />
+            </div>
+
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Select Student ({modalFilteredStudents.length} matching) *
             </label>
             <select
               value={selectedStudentId}
               onChange={(e) => handleStudentSelect(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:bg-white"
             >
-              {students.map((s) => (
-                <option key={s.studentId} value={s.studentId}>
-                  {s.fullName} ({s.studentId}) — Balance: ₹{s.outstandingBalance}
+              {modalFilteredStudents.map((s) => (
+                <option key={s.id} value={s.studentId}>
+                  GR.No: {s.grNo || s.studentId} — {s.fullName} ({s.batchName || s.courseName}) — Remaining: ₹{s.outstandingBalance}
                 </option>
               ))}
             </select>
@@ -528,7 +801,7 @@ export const FeeManagement: React.FC = () => {
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">{settings.address}</p>
               <p className="text-xs text-slate-600">
-                Phone: {settings.phone} • Email: {settings.email}
+                Phone: {settings.phone} • Email: {settings.email} • Website: {settings.website || 'techvisioncomputer.com'}
               </p>
               <div className="mt-2 inline-block px-3 py-1 bg-slate-900 text-white text-[11px] font-bold uppercase tracking-widest rounded">
                 Official Fee Receipt
@@ -627,6 +900,39 @@ export const FeeManagement: React.FC = () => {
         title="Reverse Payment Receipt"
         message={`Are you sure you want to reverse Receipt ${reversalTarget?.receiptNo} of ₹${reversalTarget?.amount}? The student's outstanding balance will be restored accordingly.`}
         confirmText="Confirm Reversal"
+        isDestructive
+      />
+
+      {/* Delete Single Payment Receipt Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deletePaymentTarget}
+        onClose={() => setDeletePaymentTarget(null)}
+        onConfirm={handleConfirmDeleteSinglePayment}
+        title="Delete Fee Receipt from History"
+        message={`Permanently delete Receipt ${deletePaymentTarget?.receiptNo} (₹${deletePaymentTarget?.amount} for ${deletePaymentTarget?.studentName}) from fee history?`}
+        confirmText="Delete Receipt"
+        isDestructive
+      />
+
+      {/* Clear All Fee History & Reset Student Balances Confirmation */}
+      <ConfirmDialog
+        isOpen={isClearFeeHistoryOpen}
+        onClose={() => setIsClearFeeHistoryOpen(false)}
+        onConfirm={handleConfirmClearFeeHistory}
+        title="Clear All Fee History & Reset Student Balances"
+        message="This will permanently delete all recorded fee payment receipts and reset every student's paid fee amount to ₹0. Continue?"
+        confirmText="Clear Fee History & Reset Fees"
+        isDestructive
+      />
+
+      {/* Reset All Students & Fees Confirmation */}
+      <ConfirmDialog
+        isOpen={isFullResetOpen}
+        onClose={() => setIsFullResetOpen(false)}
+        onConfirm={handleConfirmFullReset}
+        title="Reset All Students & Fee History"
+        message="This will permanently delete all students, remove all recent fee collections and fee history, and release all 14 computer lab workstations. Continue?"
+        confirmText="Reset All Students & Fees"
         isDestructive
       />
     </div>
