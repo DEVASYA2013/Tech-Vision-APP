@@ -13,7 +13,7 @@ export interface UserProfile {
   updatedAt?: string;
 }
 
-export type StudentStatus = 'active' | 'completed' | 'on_hold' | 'inactive';
+export type StudentStatus = 'active' | 'completed' | 'on_hold' | 'inactive' | 'cancelled';
 
 export interface Student {
   id: string; // firestore doc id
@@ -50,6 +50,8 @@ export interface Student {
   certificateIssued?: boolean;
   certificateIssuedDate?: string;
   status: StudentStatus;
+  cancellationDate?: string;
+  cancellationReason?: string;
   internalNotes?: string;
   isDemo?: boolean;
   createdAt: string;
@@ -88,7 +90,7 @@ export interface Batch {
   updatedAt: string;
 }
 
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave' | 'unmarked';
 
 export interface AttendanceRecordItem {
   studentId: string;
@@ -179,7 +181,7 @@ export interface InstituteSettings {
 export interface InstituteNotification {
   id: string;
   notificationId: string;
-  type: 'fee_due' | 'unmarked_attendance' | 'low_seats' | 'batch_full' | 'info' | 'enquiry_followup';
+  type: 'fee_due' | 'unmarked_attendance' | 'low_seats' | 'batch_full' | 'info' | 'enquiry_followup' | 'consecutive_absent';
   title: string;
   message: string;
   relatedId?: string;

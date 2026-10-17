@@ -35,22 +35,22 @@ export const Attendance: React.FC = () => {
   );
 
   // Sync attendance state when date or batch changes
+  const existingSheet = attendanceSheets.find(
+    (a) => a.date === selectedDate && a.batchId === selectedBatchId
+  );
+  const isSheetSaved = Boolean(existingSheet && existingSheet.records.length > 0);
+
   useEffect(() => {
     if (!selectedBatchId) return;
-
-    // Check if an attendance sheet already exists for this date and batch
-    const existingSheet = attendanceSheets.find(
-      (a) => a.date === selectedDate && a.batchId === selectedBatchId
-    );
 
     if (existingSheet && existingSheet.records.length > 0) {
       setRecords(existingSheet.records);
     } else {
-      // Initialize with enrolled students with default 'present' or unselected
+      // Every batch's attendance initially appears blank/unmarked until explicitly entered
       const initial: AttendanceRecordItem[] = enrolledStudents.map((s) => ({
         studentId: s.studentId,
         studentName: s.fullName,
-        status: 'present',
+        status: 'unmarked',
         remarks: '',
       }));
       setRecords(initial);
@@ -71,7 +71,8 @@ export const Attendance: React.FC = () => {
 
   const handleMarkAll = (status: AttendanceStatus) => {
     setRecords((prev) => prev.map((r) => ({ ...r, status })));
-    showToast(`Marked all students as ${status.toUpperCase()}`, 'info');
+    const label = status === 'unmarked' ? 'Blank / Unmarked' : status.toUpperCase();
+    showToast(`Marked all students as ${label}`, 'info');
   };
 
   const handleSave = async () => {
@@ -119,6 +120,7 @@ export const Attendance: React.FC = () => {
   const absentCount = records.filter((r) => r.status === 'absent').length;
   const lateCount = records.filter((r) => r.status === 'late').length;
   const leaveCount = records.filter((r) => r.status === 'leave').length;
+  const unmarkedCount = records.filter((r) => r.status === 'unmarked' || !r.status).length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -195,7 +197,7 @@ export const Attendance: React.FC = () => {
             </select>
           </div>
 
-          {/* Quick Stats: Present / Absent */}
+          {/* Quick Stats: Present / Absent / Blank */}
           <div className="flex items-center gap-2 pt-5">
             <div className="flex-1 p-2 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
               <span className="text-[10px] text-emerald-800 font-bold uppercase">Present</span>
@@ -205,25 +207,68 @@ export const Attendance: React.FC = () => {
               <span className="text-[10px] text-rose-800 font-bold uppercase">Absent</span>
               <div className="text-base font-black text-rose-700">{absentCount}</div>
             </div>
+            <div className="flex-1 p-2 rounded-xl bg-slate-100 border border-slate-200 text-center">
+              <span className="text-[10px] text-slate-600 font-bold uppercase">Blank</span>
+              <div className="text-base font-black text-slate-700">{unmarkedCount}</div>
+            </div>
           </div>
 
           {/* Quick Mark All Buttons */}
-          <div className="flex items-center gap-2 pt-5">
+          <div className="flex items-center gap-1.5 pt-5">
             <button
               onClick={() => handleMarkAll('present')}
-              className="flex-1 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+              className="flex-1 py-2 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               All Present
             </button>
             <button
               onClick={() => handleMarkAll('absent')}
-              className="flex-1 py-2 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+              className="flex-1 py-2 px-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer"
             >
               <XCircle className="w-3.5 h-3.5" />
               All Absent
             </button>
+            <button
+              onClick={() => handleMarkAll('unmarked')}
+              className="flex-1 py-2 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+              title="Clear all to unrecorded/blank"
+            >
+              Clear Blank
+            </button>
           </div>
+        </div>
+
+        {/* Batch Attendance Status Banner */}
+        <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+          isSheetSaved
+            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+            : 'bg-amber-50/70 border-amber-200 text-amber-900'
+        }`}>
+          <div className="flex items-center gap-2">
+            {isSheetSaved ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            )}
+            <div>
+              <span className="font-bold">
+                {isSheetSaved ? 'Batch Attendance Recorded' : 'Batch Attendance Not Yet Marked'}
+              </span>
+              <span className="text-[11px] ml-1.5 opacity-80">
+                {isSheetSaved
+                  ? `Saved for ${currentBatch?.batchName || selectedBatchId} on ${formatDate(selectedDate)} (Marked by ${existingSheet?.markedByStaffName || 'Staff'})`
+                  : `All students start as blank/unmarked for ${formatDate(selectedDate)} until marked and saved.`}
+              </span>
+            </div>
+          </div>
+          <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+            isSheetSaved
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              : 'bg-amber-100 text-amber-800 border-amber-300'
+          }`}>
+            {isSheetSaved ? 'Saved Roll' : 'Blank / Unmarked'}
+          </span>
         </div>
       </div>
 
@@ -275,13 +320,13 @@ export const Attendance: React.FC = () => {
                       {r.studentName}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => handleStatusChange(r.studentId, 'present')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                             r.status === 'present'
-                              ? 'bg-emerald-600 text-white shadow-sm'
+                              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400'
                               : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
                           }`}
                         >
@@ -291,9 +336,9 @@ export const Attendance: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(r.studentId, 'absent')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                             r.status === 'absent'
-                              ? 'bg-rose-600 text-white shadow-sm'
+                              ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400'
                               : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-700'
                           }`}
                         >
@@ -303,9 +348,9 @@ export const Attendance: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(r.studentId, 'late')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                             r.status === 'late'
-                              ? 'bg-amber-500 text-white shadow-sm'
+                              ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-400'
                               : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700'
                           }`}
                         >
@@ -315,13 +360,25 @@ export const Attendance: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(r.studentId, 'leave')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                             r.status === 'leave'
-                              ? 'bg-indigo-600 text-white shadow-sm'
+                              ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400'
                               : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
                           }`}
                         >
                           Leave (LV)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(r.studentId, 'unmarked')}
+                          className={`px-2 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            r.status === 'unmarked' || !r.status
+                              ? 'bg-slate-700 text-white shadow-sm ring-2 ring-slate-400'
+                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                          }`}
+                          title="Clear to blank / unmarked"
+                        >
+                          Blank (—)
                         </button>
                       </div>
                     </td>

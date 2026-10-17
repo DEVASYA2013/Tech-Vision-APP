@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
+import { useAuth } from '../context/AuthContext';
 import { formatINR, formatDate, getTodayDateString, getCurrentMonthName } from '../utils/formatters';
 import { useToast } from '../components/ui/Toast';
 
@@ -25,6 +26,7 @@ interface Message {
 
 export const AIAssistant: React.FC = () => {
   const { students, courses, batches, seats, payments, attendanceSheets, settings } = useInstitute();
+  const { isAdmin } = useAuth();
   const { showToast } = useToast();
 
   const [inputQuery, setInputQuery] = useState('');
@@ -69,10 +71,14 @@ export const AIAssistant: React.FC = () => {
     'Which students have outstanding fees?',
     'How many seats are available in the computer lab?',
     "Show today's attendance summary.",
-    'How much money was collected this month?',
+    ...(isAdmin
+      ? [
+          'How much money was collected this month?',
+          "Summarize this month's admissions and collections.",
+        ]
+      : []),
     'Which batches are nearly full?',
     'Create a fee reminder draft for overdue students.',
-    "Summarize this month's admissions and collections.",
   ];
 
   const processQueryLocally = (query: string): string => {
@@ -92,6 +98,11 @@ export const AIAssistant: React.FC = () => {
         .slice(0, 5)
         .map((s) => `• **${s.fullName}** (${s.studentId}, ${s.courseName}): Outstanding **${formatINR(s.outstandingBalance)}** (Paid ${formatINR(s.paidAmount)} / ${formatINR(s.netPayable)})`)
         .join('\n');
+
+      if (!isAdmin) {
+        return `There are currently **${overdueStudents.length} students** with pending fee dues:\n\n${list}${overdueStudents.length > 5 ? `\n\n...and ${overdueStudents.length - 5} more.` : ''}\n\nYou can draft WhatsApp fee reminders or record payments directly from the Fee Management tab. (Note: Total institute-wide financial totals are restricted to Admin).`;
+      }
+
       return `There are currently **${overdueStudents.length} students** with pending fee dues, totaling **${formatINR(totalOutstanding)}** in outstanding balance:\n\n${list}${overdueStudents.length > 5 ? `\n\n...and ${overdueStudents.length - 5} more.` : ''}\n\nYou can draft WhatsApp fee reminders directly from the Fee Management tab.`;
     }
 
@@ -107,8 +118,11 @@ export const AIAssistant: React.FC = () => {
 
     // 5. Money collected
     if (q.includes('collected') || q.includes('revenue') || q.includes('collection this month')) {
+      if (!isAdmin) {
+        return `🔒 **Access Restricted:** Institute-wide financial analytics, revenue collections, and total outstanding dues are restricted to Administrator accounts. As a staff member, you can check individual student balances in the Student Directory or Fee Register.`;
+      }
       const allTimeTotal = payments.filter((p) => !p.isReversal).reduce((acc, p) => acc + p.amount, 0);
-      return `**Fee Collection Analytics:**\n• Fees collected in ${getCurrentMonthName()}: **${formatINR(monthCollected)}**\n• Total all-time fee collections: **${formatINR(allTimeTotal)}** across ${payments.length} verified transactions.\n• Total outstanding pending collection: **${formatINR(totalOutstanding)}**.`;
+      return `**Fee Collection Analytics (Admin Only):**\n• Fees collected in ${getCurrentMonthName()}: **${formatINR(monthCollected)}**\n• Total all-time fee collections: **${formatINR(allTimeTotal)}** across ${payments.length} verified transactions.\n• Total outstanding pending collection: **${formatINR(totalOutstanding)}**.`;
     }
 
     // 6. Batches full
@@ -131,7 +145,11 @@ export const AIAssistant: React.FC = () => {
     }
 
     // 8. General monthly summary
-    return `**Tech Vision Computer Class Executive Summary (${getCurrentMonthName()}):**\n\n• **Active Students:** ${activeStudents.length}\n• **Total Lab Seats:** ${seats.length} (${availableSeats.length} free, ${occupiedSeats.length} occupied)\n• **Fees Collected This Month:** ${formatINR(monthCollected)}\n• **Overdue Fees Pending:** ${formatINR(totalOutstanding)} across ${overdueStudents.length} student(s)\n• **Active Courses:** ${courses.length} courses offered\n• **Class Batches:** ${batches.length} batches running\n\nAll figures are computed directly from live Firestore database records.`;
+    if (isAdmin) {
+      return `**Tech Vision Computer Class Executive Summary (${getCurrentMonthName()}):**\n\n• **Active Students:** ${activeStudents.length}\n• **Total Lab Seats:** ${seats.length} (${availableSeats.length} free, ${occupiedSeats.length} occupied)\n• **Fees Collected This Month:** ${formatINR(monthCollected)}\n• **Overdue Fees Pending:** ${formatINR(totalOutstanding)} across ${overdueStudents.length} student(s)\n• **Active Courses:** ${courses.length} courses offered\n• **Class Batches:** ${batches.length} batches running\n\nAll figures are computed directly from live Firestore database records.`;
+    }
+
+    return `**Tech Vision Computer Class Staff Overview:**\n\n• **Active Students:** ${activeStudents.length}\n• **Total Lab Seats:** ${seats.length} (${availableSeats.length} free, ${occupiedSeats.length} occupied)\n• **Students with Dues:** ${overdueStudents.length} student(s)\n• **Active Courses:** ${courses.length} courses offered\n• **Class Batches:** ${batches.length} batches running\n\n(Note: Institute revenue and total financial collections are accessible on Admin accounts).`;
   };
 
   const handleSend = async (queryToSend = inputQuery) => {

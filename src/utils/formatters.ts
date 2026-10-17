@@ -77,80 +77,141 @@ export function isValidIndianMobile(phone: string): boolean {
 /**
  * Adds exactly 1 calendar month to a YYYY-MM-DD date string.
  * Example: '2026-09-07' -> '2026-10-07'
+/**
+ * Calculates a specific monthly cycle date anchored to an original billing anchor date.
+ * Consistent across shorter months (e.g. 31 Jan -> 28 Feb -> 31 Mar).
  */
-export function addOneMonthToDateString(dateStr?: string): string {
-  const baseStr = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())
-    ? dateStr.trim()
+export function getCycleDateForMonthOffset(anchorDateStr: string, monthOffset: number): string {
+  const baseStr = anchorDateStr && /^\d{4}-\d{2}-\d{2}$/.test(anchorDateStr.trim())
+    ? anchorDateStr.trim()
     : getTodayDateString();
   const [y, m, d] = baseStr.split('-').map(Number);
-  // Target month in 0-indexed JS Date: m (since m is 1-indexed, m is next month in 0-indexed)
-  const targetYear = m === 12 ? y + 1 : y;
-  const targetMonth = m === 12 ? 1 : m + 1;
-  // Max days in targetMonth
-  const maxDayInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
-  const clampedDay = Math.min(d, maxDayInTargetMonth);
+  const totalMonths = (m - 1) + monthOffset;
+  const targetYear = y + Math.floor(totalMonths / 12);
+  const targetMonth = ((totalMonths % 12) + 12) % 12 + 1;
+  const maxDays = new Date(targetYear, targetMonth, 0).getDate();
+  const clampedDay = Math.min(d, maxDays);
   return `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+}
+
+/**
+ * Adds one calendar month to a date string while respecting the day of month.
+ */
+export function addOneMonthToDateString(dateStr?: string): string {
+  return getCycleDateForMonthOffset(dateStr || getTodayDateString(), 1);
 }
 
 export interface StudentFeeReminderInfo {
   hasRemainingFee: boolean;
-  referenceDate: string;
-  referenceType: 'admission' | 'last_payment';
-  reminderDate: string; // YYYY-MM-DD (exact 1 month after referenceDate)
-  daysUntilReminder: number; // <= 0 means 1 month has completed and reminder is due!
-  daysElapsed: number;
-  isReminderDue: boolean; // true when fee is remaining AND >= 1 month has passed
+  anchorDate: string; // The stable billing anchor (admission date or established cycle)
+  anchorDay: number; // Day of month (e.g. 12 or 31)
+  currentCycleIndex: number; // 1 = 1st month, 2 = 2nd month...
+  referenceDate: string; // Anchor date
+  referenceType: 'admission' | 'cycle_anchor' | 'last_payment';
+  reminderDate: string; // YYYY-MM-DD - exact monthly cycle due date
+  daysUntilReminder: number; // <= 0 means fee is currently due or overdue
+  daysElapsed: number; // Days overdue if past due date
+  isReminderDue: boolean; // true when fee is remaining AND due date <= today
   isExactOneMonthToday: boolean;
   isUpcomingSoon: boolean; // within next 7 days
   statusText: string;
 }
 
+/**
+ * Core business rule:
+ * A student's monthly fee cycle is anchored to their admission date (or established billing schedule),
+ * NOT to the date on which they eventually make a late payment.
+ * 
+ * Example:
+ * Admission date: 12 July.
+ * Cycle 1 due date: 12 August.
+ * If unpaid on 18 August -> fee remains overdue by 6 days.
+ * If student pays on 18 August -> next cycle due date is 12 September (NOT 18 September).
+ * Shorter calendar months (e.g. 31st) clamp to the end of month and restore to the 31st in longer months.
+ */
 export function getStudentFeeReminderInfo(
   student: {
     studentId: string;
     admissionDate?: string;
+    startDate?: string;
     outstandingBalance?: number;
     feeReminderDate?: string;
+    grNo?: string;
   },
   payments?: Array<{
     studentId: string;
     paymentDate: string;
     isReversal?: boolean;
+    amount?: number;
   }>,
   todayStr?: string
 ): StudentFeeReminderInfo {
   const today = todayStr || getTodayDateString();
   const hasRemainingFee = (student.outstandingBalance || 0) > 0;
-  const admissionDate =
+  
+  // 1. Establish stable billing anchor from admission date or start date
+  const anchorDate =
     student.admissionDate && /^\d{4}-\d{2}-\d{2}$/.test(student.admissionDate)
       ? student.admissionDate
+      : student.startDate && /^\d{4}-\d{2}-\d{2}$/.test(student.startDate)
+      ? student.startDate
       : today;
+  const [, , dStr] = anchorDate.split('-');
+  const anchorDay = parseInt(dStr, 10) || 1;
 
-  // Check if student made a more recent valid fee payment after admission
-  let latestPaymentDate = '';
-  if (payments && payments.length > 0) {
-    for (const p of payments) {
-      if (
-        p.studentId === student.studentId &&
+  if (!hasRemainingFee) {
+    return {
+      hasRemainingFee: false,
+      anchorDate,
+      anchorDay,
+      currentCycleIndex: 0,
+      referenceDate: anchorDate,
+      referenceType: 'admission',
+      reminderDate: anchorDate,
+      daysUntilReminder: 999,
+      daysElapsed: 0,
+      isReminderDue: false,
+      isExactOneMonthToday: false,
+      isUpcomingSoon: false,
+      statusText: 'No Remaining Fee',
+    };
+  }
+
+  // 2. Inspect valid payments made by this student
+  const validPayments = (payments || [])
+    .filter(
+      (p) =>
+        (p.studentId === student.studentId || (student.grNo && p.studentId === student.grNo)) &&
         !p.isReversal &&
         p.paymentDate &&
         /^\d{4}-\d{2}-\d{2}$/.test(p.paymentDate)
-      ) {
-        if (!latestPaymentDate || p.paymentDate > latestPaymentDate) {
-          latestPaymentDate = p.paymentDate;
-        }
-      }
+    )
+    .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
+
+  // 3. Find the current cycle due date anchored to anchorDate
+  // Cycle 1 is 1 month after admission, Cycle 2 is 2 months, etc.
+  let cycleIndex = 1;
+  while (cycleIndex < 120) { // Safety ceiling: 10 years of monthly cycles
+    const cycleDueDate = getCycleDateForMonthOffset(anchorDate, cycleIndex);
+    
+    // Check if there is a payment recorded on or after this cycle's due date
+    const hasPaymentForCycle = validPayments.some((p) => p.paymentDate >= cycleDueDate);
+
+    if (hasPaymentForCycle) {
+      // This cycle received a payment, so advance to evaluate the next cycle
+      cycleIndex++;
+      continue;
     }
+
+    // No payment on or after this cycle's due date. This cycle is the current due cycle.
+    break;
   }
 
-  const useLastPayment = Boolean(latestPaymentDate && latestPaymentDate > admissionDate);
-  const referenceDate = useLastPayment ? latestPaymentDate : admissionDate;
-  const referenceType: 'admission' | 'last_payment' = useLastPayment ? 'last_payment' : 'admission';
-
+  // If student has an explicit override feeReminderDate set manually by admin:
   const reminderDate =
     student.feeReminderDate && /^\d{4}-\d{2}-\d{2}$/.test(student.feeReminderDate)
       ? student.feeReminderDate
-      : addOneMonthToDateString(referenceDate);
+      : getCycleDateForMonthOffset(anchorDate, cycleIndex);
 
   const parseUTC = (ymd: string) => {
     const [yr, mo, da] = ymd.split('-').map(Number);
@@ -159,11 +220,10 @@ export function getStudentFeeReminderInfo(
 
   const todayMs = parseUTC(today);
   const reminderMs = parseUTC(reminderDate);
-  const referenceMs = parseUTC(referenceDate);
 
   const MS_PER_DAY = 1000 * 60 * 60 * 24;
   const daysUntilReminder = Math.round((reminderMs - todayMs) / MS_PER_DAY);
-  const daysElapsed = Math.max(0, Math.round((todayMs - referenceMs) / MS_PER_DAY));
+  const daysOverdue = Math.max(0, Math.round((todayMs - reminderMs) / MS_PER_DAY));
 
   const isReminderDue = hasRemainingFee && daysUntilReminder <= 0;
   const isExactOneMonthToday = hasRemainingFee && daysUntilReminder === 0;
@@ -172,21 +232,24 @@ export function getStudentFeeReminderInfo(
   let statusText = 'No Remaining Fee';
   if (hasRemainingFee) {
     if (daysUntilReminder === 0) {
-      statusText = `Due Today • 1 Month Completed (${formatDate(reminderDate)})`;
+      statusText = `Monthly Due Today (${formatDate(reminderDate)})`;
     } else if (daysUntilReminder < 0) {
-      statusText = `1-Month Reminder Due • ${Math.abs(daysUntilReminder)} day${Math.abs(daysUntilReminder) === 1 ? '' : 's'} past ${formatDate(reminderDate)}`;
+      statusText = `Overdue by ${daysOverdue} day${daysOverdue === 1 ? '' : 's'} (Due: ${formatDate(reminderDate)})`;
     } else {
-      statusText = `Remind on ${formatDate(reminderDate)} (in ${daysUntilReminder} day${daysUntilReminder === 1 ? '' : 's'})`;
+      statusText = `Due on ${formatDate(reminderDate)} (in ${daysUntilReminder} day${daysUntilReminder === 1 ? '' : 's'})`;
     }
   }
 
   return {
     hasRemainingFee,
-    referenceDate,
-    referenceType,
+    anchorDate,
+    anchorDay,
+    currentCycleIndex: cycleIndex,
+    referenceDate: anchorDate,
+    referenceType: 'cycle_anchor',
     reminderDate,
     daysUntilReminder,
-    daysElapsed,
+    daysElapsed: daysOverdue,
     isReminderDue,
     isExactOneMonthToday,
     isUpcomingSoon,

@@ -13,6 +13,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
+import { useAuth } from '../context/AuthContext';
 import { formatINR, formatDate, getTodayDateString } from '../utils/formatters';
 import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
@@ -34,25 +35,38 @@ type ReportType =
 
 export const Reports: React.FC = () => {
   const { students, courses, batches, seats, payments, attendanceSheets, auditLogs } = useInstitute();
+  const { isAdmin } = useAuth();
   const { showToast } = useToast();
 
   const [selectedReport, setSelectedReport] = useState<ReportType>('active_students');
   const [dateFilter, setDateFilter] = useState(getTodayDateString());
 
-  const reportsList = [
+  const allReportsList = [
     { id: 'active_students', title: 'Active Students List', icon: Users, category: 'Students' },
     { id: 'new_admissions', title: 'Recent Admissions', icon: Users, category: 'Students' },
     { id: 'former_students', title: 'Former / Alumni Students', icon: Users, category: 'Students' },
     { id: 'daily_attendance', title: 'Daily Attendance Report', icon: CheckCircle2, category: 'Attendance' },
     { id: 'attendance_pct', title: 'Student Attendance %', icon: CheckCircle2, category: 'Attendance' },
-    { id: 'pending_fees', title: 'Pending Dues & Balances', icon: CreditCard, category: 'Finance' },
-    { id: 'daily_collection', title: 'Fee Collection by Day', icon: IndianRupee, category: 'Finance' },
-    { id: 'monthly_collection', title: 'Monthly Collection Summary', icon: IndianRupee, category: 'Finance' },
+    { id: 'pending_fees', title: 'Pending Dues & Balances (Admin)', icon: CreditCard, category: 'Finance' },
+    { id: 'daily_collection', title: 'Fee Collection by Day (Admin)', icon: IndianRupee, category: 'Finance' },
+    { id: 'monthly_collection', title: 'Monthly Collection Summary (Admin)', icon: IndianRupee, category: 'Finance' },
     { id: 'course_distribution', title: 'Course Enrollment Count', icon: FileText, category: 'Academic' },
     { id: 'batch_capacity', title: 'Batch Seat Capacity', icon: Calendar, category: 'Academic' },
     { id: 'seat_utilization', title: 'Computer Lab Seat Utilization', icon: Monitor, category: 'Lab' },
     { id: 'staff_activity', title: 'Staff Activity & Audit Logs', icon: FileSpreadsheet, category: 'Audit' },
   ];
+
+  // Restrict Finance reports (institute revenue, collections, total dues) to Admin only
+  const reportsList = allReportsList.filter(
+    (r) => isAdmin || r.category !== 'Finance'
+  );
+
+  // If a non-admin somehow has a finance report selected, fallback to active_students
+  React.useEffect(() => {
+    if (!isAdmin && (selectedReport === 'pending_fees' || selectedReport === 'daily_collection' || selectedReport === 'monthly_collection')) {
+      setSelectedReport('active_students');
+    }
+  }, [isAdmin, selectedReport]);
 
   const handleExportCurrent = () => {
     let headers: string[] = [];

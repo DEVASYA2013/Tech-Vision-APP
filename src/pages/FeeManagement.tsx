@@ -33,6 +33,7 @@ import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { FeeReminderModal } from '../components/fees/FeeReminderModal';
 
 export const FeeManagement: React.FC = () => {
   const {
@@ -309,33 +310,35 @@ export const FeeManagement: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {(payments.length > 0 || students.some((s) => s.paidAmount > 0)) && (
+          {isAdmin && (payments.length > 0 || students.some((s) => s.paidAmount > 0)) && (
             <button
               onClick={() => setIsClearFeeHistoryOpen(true)}
               className="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="Delete all fee receipts and reset student paid balances to ₹0"
+              title="Delete all fee receipts and reset student paid balances to ₹0 (Admin Only)"
             >
               <RotateCcw className="w-4 h-4" />
               Clear Fee History & Reset Balances
             </button>
           )}
-          {(payments.length > 0 || students.length > 0) && (
+          {isAdmin && (payments.length > 0 || students.length > 0) && (
             <button
               onClick={() => setIsFullResetOpen(true)}
               className="px-3.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="Delete all students, delete all fee history, and free all 14 computers"
+              title="Delete all students, delete all fee history, and free all 14 computers (Admin Only)"
             >
               <Trash2 className="w-4 h-4" />
               Reset All Students & Fees
             </button>
           )}
-          <button
-            onClick={handleExportCSV}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            Export Payments
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleExportCSV}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              Export Payments
+            </button>
+          )}
           <button
             onClick={() => handleOpenRecordModal()}
             className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-900/20 cursor-pointer"
@@ -346,31 +349,59 @@ export const FeeManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Financial Overview Cards */}
+      {/* Financial Overview Cards (Admin sees total income & remaining dues; Staff sees student dues & counter desk) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
-            <span>Total Collected Till Date</span>
-            <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-              <IndianRupee className="w-4 h-4" />
+        {isAdmin ? (
+          <>
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                <span>Total Collected Till Date</span>
+                <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                  <IndianRupee className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 text-2xl font-black text-emerald-600">{formatINR(totalCollected)}</div>
+              <div className="text-[11px] text-slate-400 mt-1">{payments.length} transactions recorded (Admin)</div>
             </div>
-          </div>
-          <div className="mt-2 text-2xl font-black text-emerald-600">{formatINR(totalCollected)}</div>
-          <div className="text-[11px] text-slate-400 mt-1">{payments.length} transactions recorded</div>
-        </div>
 
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
-            <span>Total Remaining Fees</span>
-            <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
-              <AlertTriangle className="w-4 h-4" />
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                <span>Total Remaining Fees</span>
+                <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 text-2xl font-black text-rose-600">{formatINR(totalOutstanding)}</div>
+              <div className="text-[11px] text-slate-400 mt-1">
+                Across {studentsWithReminderList.length} active student(s) (Admin)
+              </div>
             </div>
-          </div>
-          <div className="mt-2 text-2xl font-black text-rose-600">{formatINR(totalOutstanding)}</div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Across {studentsWithReminderList.length} active student(s)
-          </div>
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                <span>Students with Dues</span>
+                <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 text-2xl font-black text-rose-600">{studentsWithReminderList.length}</div>
+              <div className="text-[11px] text-slate-400 mt-1">Active students with balance</div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                <span>Fee Collection Desk</span>
+                <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 text-base font-extrabold text-emerald-700">Counter Desk Active</div>
+              <div className="text-[11px] text-slate-500 mt-1">Search student below to collect &amp; print receipt</div>
+            </div>
+          </>
+        )}
 
         <div
           className={`p-5 rounded-2xl border shadow-xs ${
@@ -512,11 +543,11 @@ export const FeeManagement: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setWhatsappStudent(st)}
-                      className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
-                      title="Send 1-Month Fee Reminder message"
+                      className="px-2.5 py-1.5 rounded-lg border border-cyan-300 bg-cyan-50/80 hover:bg-cyan-100 text-cyan-800 text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1 shadow-2xs"
+                      title="Generate and Share Fee Reminder with student"
                     >
-                      <Share2 className="w-3 h-3 text-emerald-600" />
-                      Remind
+                      <Share2 className="w-3 h-3 text-cyan-600" />
+                      Share Reminder
                     </button>
                   </div>
                 </div>
@@ -602,25 +633,27 @@ export const FeeManagement: React.FC = () => {
                         >
                           <Printer className="w-4 h-4" />
                         </button>
-                        {!p.isReversal && (
+                        {isAdmin && !p.isReversal && (
                           <button
                             onClick={() => {
                               setReversalTarget(p);
                               setReversalReason('Reversed by user');
                             }}
                             className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition cursor-pointer"
-                            title="Reverse Payment"
+                            title="Reverse Payment (Admin Only)"
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
                         )}
-                        <button
-                          onClick={() => setDeletePaymentTarget(p)}
-                          className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
-                          title="Delete Receipt from History"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setDeletePaymentTarget(p)}
+                            className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                            title="Delete Receipt from History (Admin Only)"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -934,6 +967,13 @@ export const FeeManagement: React.FC = () => {
         message="This will permanently delete all students, remove all recent fee collections and fee history, and release all 14 computer lab workstations. Continue?"
         confirmText="Reset All Students & Fees"
         isDestructive
+      />
+
+      {/* AI Fee Reminder Share Modal */}
+      <FeeReminderModal
+        isOpen={!!whatsappStudent}
+        onClose={() => setWhatsappStudent(null)}
+        student={whatsappStudent}
       />
     </div>
   );

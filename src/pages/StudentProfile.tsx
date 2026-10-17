@@ -27,6 +27,8 @@ import {
   IdCard,
   Briefcase,
   Sparkles,
+  UserX,
+  Share2,
 } from 'lucide-react';
 import { Student, PaymentMethod } from '../types';
 import { useInstitute } from '../context/InstituteContext';
@@ -39,6 +41,7 @@ import {
 import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { FeeReminderModal } from '../components/fees/FeeReminderModal';
 
 interface StudentProfileProps {
   student: Student;
@@ -55,6 +58,7 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
     courses,
     updateStudent,
     deleteStudent,
+    cancelAdmission,
     markCourseCompleted,
     permanentDeleteStudent,
     recordFeePayment,
@@ -69,7 +73,9 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
     'all' | 'personal' | 'academic' | 'fees' | 'attendance' | 'activity'
   >('all');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [isPermanentConfirmOpen, setIsPermanentConfirmOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
 
   // Quick Fee Payment Modal inside StudentProfile
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -195,6 +201,17 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
     }
   };
 
+  const handleCancelAdmission = async () => {
+    try {
+      await cancelAdmission(student.id, cancelReason || 'Student requested cancellation');
+      showToast(`Admission cancelled for ${student.fullName}. Workstation released.`, 'info');
+      setIsDeleteModalOpen(false);
+      onBack();
+    } catch {
+      showToast('Failed to cancel admission.', 'error');
+    }
+  };
+
   const handlePermanentDelete = async () => {
     try {
       await permanentDeleteStudent(student.id);
@@ -269,16 +286,26 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           {student.outstandingBalance > 0 && (
-            <button
-              onClick={() => {
-                setPayAmount(student.outstandingBalance);
-                setIsPayModalOpen(true);
-              }}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              Pay Remaining Fee ({formatINR(student.outstandingBalance)})
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  setPayAmount(student.outstandingBalance);
+                  setIsPayModalOpen(true);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                Pay Remaining Fee ({formatINR(student.outstandingBalance)})
+              </button>
+              <button
+                onClick={() => setIsReminderModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title="Generate and Share Fee Reminder with student"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Share Reminder
+              </button>
+            </>
           )}
 
           <button
@@ -306,6 +333,26 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Admission Cancelled Alert Banner */}
+      {student.status === 'cancelled' && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-3 shadow-xs">
+          <UserX className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-rose-950">
+              Admission Cancelled
+            </h3>
+            <p className="text-xs text-rose-800 leading-relaxed">
+              This student's admission has been officially cancelled on{' '}
+              <strong>{student.cancellationDate ? formatDate(student.cancellationDate) : 'Recorded Date'}</strong>.
+              {student.cancellationReason && (
+                <span> Reason: <em>"{student.cancellationReason}"</em>.</span>
+              )}{' '}
+              Assigned computer workstation has been released. Historical fee transactions, payment receipts, and attendance records remain preserved.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Executive Student Dossier Header Card */}
       <div className="rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden">
@@ -397,14 +444,25 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
               />
             </div>
             {student.outstandingBalance > 0 ? (
-              <div className="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5 pt-0.5">
-                <BellRing className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  1-Month Reminder: {formatDate(reminderInfo.reminderDate)}{' '}
-                  {reminderInfo.isReminderDue
-                    ? '(DUE NOW)'
-                    : `(in ${reminderInfo.daysUntilReminder}d)`}
-                </span>
+              <div className="space-y-2 pt-0.5">
+                <div className="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5">
+                  <BellRing className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Monthly Due: {formatDate(reminderInfo.reminderDate)}{' '}
+                    {reminderInfo.isReminderDue
+                      ? '(DUE NOW)'
+                      : `(in ${reminderInfo.daysUntilReminder}d)`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReminderModalOpen(true)}
+                  className="w-full py-1.5 px-3 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 text-[11px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Share fee reminder with student"
+                >
+                  <Share2 className="w-3 h-3 text-cyan-300" />
+                  Share Fee Reminder
+                </button>
               </div>
             ) : (
               <div className="text-[11px] text-emerald-300 font-semibold flex items-center gap-1.5 pt-0.5">
@@ -1266,12 +1324,42 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
             </div>
           </div>
 
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="flex-1">
+                <h4 className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
+                  <UserX className="w-4 h-4 text-amber-600" />
+                  Option 3: Cancel Admission (Student Left / Withdrew)
+                </h4>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                  Marks this admission as cancelled, frees their assigned computer terminal slot, and
+                  safely preserves all fee receipts and attendance history for audit records.
+                </p>
+                <div className="mt-2.5">
+                  <input
+                    type="text"
+                    placeholder="Reason for cancellation (e.g. Relocated, Joined College, Financial)..."
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full text-xs px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-slate-900 placeholder:text-amber-700/60 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleCancelAdmission}
+                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shrink-0 transition shadow-xs cursor-pointer self-start sm:self-center"
+              >
+                Cancel Admission
+              </button>
+            </div>
+          </div>
+
           <div className="p-4 rounded-xl bg-rose-50 border border-rose-200">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h4 className="text-sm font-bold text-rose-950 flex items-center gap-1.5">
                   <Trash2 className="w-4 h-4 text-rose-600" />
-                  Option 3: Permanently Delete Record
+                  Option 4: Permanently Delete Record
                 </h4>
                 <p className="text-xs text-rose-800 mt-1 leading-relaxed">
                   Completely and irreversibly removes this student profile from Cloud Firestore.
@@ -1307,6 +1395,14 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
         message={`Are you sure you want to permanently erase ${student.fullName} (${student.studentId}) from the database? This cannot be undone.`}
         confirmText="Yes, Delete Forever"
         isDestructive
+      />
+
+      {/* AI Fee Reminder Share Modal */}
+      <FeeReminderModal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        student={student}
+        reminderInfo={reminderInfo}
       />
     </div>
   );

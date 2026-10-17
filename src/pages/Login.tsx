@@ -63,7 +63,7 @@ export const Login: React.FC<LoginProps> = ({ onOpenFirstAdmin }) => {
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-slate-950 p-1.5 shadow-xl shadow-cyan-900/30 border border-slate-800 mb-3">
             <img
-              src={localStorage.getItem('tv_custom_logo') || '/pwa-192x192.png'}
+              src={localStorage.getItem('tv_custom_logo') || '/logo.png'}
               alt="Tech Vision Computer Class Logo"
               className="w-full h-full rounded-xl object-contain"
             />

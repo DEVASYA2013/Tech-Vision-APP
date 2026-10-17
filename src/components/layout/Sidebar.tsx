@@ -128,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between px-5 py-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <img
-              src={settings.logoUrl || '/pwa-192x192.png'}
+              src={settings.logoUrl || '/logo.png'}
               alt="Tech Vision Computer Class Logo"
               className="w-11 h-11 rounded-xl object-contain bg-slate-950 border border-slate-700/80 shadow-lg shadow-cyan-900/30 shrink-0"
             />

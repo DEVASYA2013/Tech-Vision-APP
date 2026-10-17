@@ -62,39 +62,41 @@ service cloud.firestore {
       allow read: if true;
       allow create: if incoming().email is string && incoming().role in ['admin', 'staff'];
       allow update: if incoming().email is string;
-      allow delete: if true;
+      allow delete: if isAdmin();
     }
 
     // Students Collection
     match /students/{studentId} {
       allow read: if true;
       allow create: if incoming().studentId is string;
-      allow update, delete: if true;
+      allow update: if true;
+      allow delete: if isAdmin();
     }
 
     // Courses Collection
     match /courses/{courseId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow write: if isAdmin();
     }
 
     // Batches Collection
     match /batches/{batchId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow write: if true;
     }
 
     // Attendance Collection
     match /attendance/{attendanceId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
     }
 
-    // Fee Payments Collection
+    // Fee Payments Collection (Staff can record valid payments; only Admin can reverse, edit or delete)
     match /feePayments/{paymentId} {
       allow read: if true;
       allow create: if incoming().amount is number && incoming().amount > 0;
-      allow update, delete: if true;
+      allow update, delete: if isAdmin();
     }
 
     // Seats Collection
@@ -119,7 +121,7 @@ service cloud.firestore {
     // Institute Settings
     match /instituteSettings/{settingsId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
     // Notifications

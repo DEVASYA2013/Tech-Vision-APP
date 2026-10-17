@@ -89,6 +89,7 @@ interface InstituteContextType {
   deleteFeePayment: (paymentId: string) => Promise<void>;
   clearAllFeeHistoryAndResetBalances: () => Promise<void>;
   resetAllStudentsAndFees: () => Promise<void>;
+  cancelAdmission: (id: string, reason?: string) => Promise<void>;
   saveAttendance: (date: string, courseId: string, batchId: string, records: AttendanceRecordItem[]) => Promise<void>;
   assignSeat: (seatId: string, studentId: string) => Promise<void>;
   releaseSeat: (seatId: string, studentId?: string) => Promise<void>;
@@ -141,7 +142,7 @@ const defaultSettings: InstituteSettings = {
   phone: '+91 98250 12345',
   email: 'info@techvisionahmedabad.in',
   website: 'techvisioncomputer.com',
-  logoUrl: typeof window !== 'undefined' ? localStorage.getItem('tv_custom_logo') || '/icon.svg' : '/icon.svg',
+  logoUrl: typeof window !== 'undefined' ? localStorage.getItem('tv_custom_logo') || '/logo.png' : '/logo.png',
   currency: '₹',
   totalSeats: 14,
   timezone: 'Asia/Kolkata',
@@ -300,7 +301,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const unsubSettings = onSnapshot(doc(db, 'instituteSettings', 'general'), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as InstituteSettings & { feesAndStudentsResetV1?: boolean };
-        const resolvedLogo = data.logoUrl || localStorage.getItem('tv_custom_logo') || '/icon.svg';
+        const resolvedLogo = data.logoUrl || localStorage.getItem('tv_custom_logo') || '/logo.png';
         if (data.logoUrl) {
           localStorage.setItem('tv_custom_logo', data.logoUrl);
         }
@@ -525,6 +526,53 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         createdAt: new Date().toISOString(),
       });
     }
+
+    // 5. Continuous-Absence Reminders (3 or more consecutive scheduled class days absent)
+    const activeStudentsForAbsence = students.filter(s => s.status === 'active' && s.batchId);
+    activeStudentsForAbsence.forEach(s => {
+      // Find all sheets for this student's batch on or before today, sorted chronologically backwards
+      const batchSheets = attendanceSheets
+        .filter(a => a.batchId === s.batchId && a.date <= today)
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      let consecutiveAbsences = 0;
+      let mostRecentAbsenceDate = '';
+
+      for (const sheet of batchSheets) {
+        // Skip Sundays or days when the batch had no scheduled class
+        const sheetDateObj = new Date(sheet.date + 'T00:00:00');
+        if (sheetDateObj.getDay() === 0) continue; // Sunday
+
+        const rec = sheet.records.find(r => r.studentId === s.studentId);
+        // Blank or unmarked attendance is NOT treated as absent
+        if (!rec || rec.status === 'unmarked') {
+          continue;
+        }
+
+        if (rec.status === 'absent') {
+          consecutiveAbsences++;
+          if (!mostRecentAbsenceDate) {
+            mostRecentAbsenceDate = sheet.date;
+          }
+        } else if (rec.status === 'present' || rec.status === 'late' || rec.status === 'leave') {
+          // Streak is stopped/broken when marked present or authorized leave
+          break;
+        }
+      }
+
+      if (consecutiveAbsences >= 3) {
+        list.push({
+          id: `absent_streak_${s.studentId}`,
+          notificationId: `absent_streak_${s.studentId}`,
+          type: 'consecutive_absent',
+          title: `Continuous Absence: ${s.fullName} (${consecutiveAbsences} Days)`,
+          message: `${s.fullName} (GR: ${s.grNo || s.studentId}) in batch "${s.batchName || 'Assigned Batch'}" has been marked absent for ${consecutiveAbsences} consecutive class days. Last absent: ${formatDate(mostRecentAbsenceDate || today)}. Contact: ${s.mobile}`,
+          relatedId: s.studentId,
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
 
     setNotifications(list);
   }, [batches, attendanceSheets, students, seats, enquiries, payments]);
@@ -790,6 +838,36 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         'Student',
         current.grNo || current.studentId,
         `Marked course completed for student "${current.fullName}". Released workstation for their batch.`
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `students/${id}`);
+    }
+  };
+
+  const cancelAdmission = async (id: string, reason = 'Student requested cancellation'): Promise<void> => {
+    try {
+      const current = await resolveStudent(id);
+      if (!current) return;
+
+      // Release workstation for their batch if one was assigned
+      if (current.assignedSeatId) {
+        await releaseSeat(current.assignedSeatId, current.studentId);
+      }
+
+      const today = getTodayDateString();
+      await updateDoc(doc(db, 'students', current.id), {
+        status: 'cancelled',
+        cancellationDate: today,
+        cancellationReason: reason,
+        assignedSeatId: '',
+        updatedAt: new Date().toISOString(),
+      });
+
+      await logAudit(
+        'ADMISSION_CANCELLED',
+        'Student',
+        current.grNo || current.studentId,
+        `Cancelled admission for student "${current.fullName}". Reason: ${reason}`
       );
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `students/${id}`);
@@ -1896,6 +1974,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateStudent,
         deleteStudent,
         markCourseCompleted,
+        cancelAdmission,
         permanentDeleteStudent,
         addEnquiry,
         updateEnquiry,

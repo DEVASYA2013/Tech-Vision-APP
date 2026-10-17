@@ -24,8 +24,10 @@ import {
   RotateCcw,
   BellRing,
   Phone,
+  Share2,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
+import { useAuth } from '../context/AuthContext';
 import {
   formatINR,
   formatDate,
@@ -36,6 +38,7 @@ import {
 import { NavTab } from '../components/layout/Sidebar';
 import { useToast } from '../components/ui/Toast';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { FeeReminderModal } from '../components/fees/FeeReminderModal';
 
 interface DashboardProps {
   onNavigate: (tab: NavTab) => void;
@@ -49,15 +52,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
     batches,
     seats,
     payments,
+    settings,
     attendanceSheets,
     auditLogs,
     deleteFeePayment,
     clearAllFeeHistoryAndResetBalances,
     resetAllStudentsAndFees,
   } = useInstitute();
+  const { isAdmin } = useAuth();
   const { showToast } = useToast();
   const [isClearFeesModalOpen, setIsClearFeesModalOpen] = React.useState(false);
   const [isResetAllModalOpen, setIsResetAllModalOpen] = React.useState(false);
+  const [dashboardReminderStudent, setDashboardReminderStudent] = React.useState<typeof students[0] | null>(null);
 
   const today = getTodayDateString();
 
@@ -129,21 +135,75 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
   );
   const studentsWithPendingFees = pendingFeeStudentsWithReminder.slice(0, 6);
 
+  // Continuous-absence calculation (3 or more consecutive scheduled class days absent)
+  const consecutiveAbsentStudents = React.useMemo(() => {
+    const list: Array<{
+      student: typeof students[0];
+      consecutiveCount: number;
+      lastAbsentDate: string;
+      batchName: string;
+    }> = [];
+
+    activeStudents.forEach((s) => {
+      if (!s.batchId) return;
+      const batchSheets = attendanceSheets
+        .filter((a) => a.batchId === s.batchId && a.date <= today)
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      let streak = 0;
+      let lastAbsent = '';
+
+      for (const sheet of batchSheets) {
+        const d = new Date(sheet.date + 'T00:00:00');
+        if (d.getDay() === 0) continue; // Skip Sundays
+
+        const rec = sheet.records.find((r) => r.studentId === s.studentId);
+        // Blank or unrecorded attendance is not treated as absent
+        if (!rec || rec.status === 'unmarked') continue;
+
+        if (rec.status === 'absent') {
+          streak++;
+          if (!lastAbsent) lastAbsent = sheet.date;
+        } else if (rec.status === 'present' || rec.status === 'late' || rec.status === 'leave') {
+          break;
+        }
+      }
+
+      if (streak >= 3) {
+        list.push({
+          student: s,
+          consecutiveCount: streak,
+          lastAbsentDate: lastAbsent || today,
+          batchName: s.batchName || 'Class Batch',
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.consecutiveCount - a.consecutiveCount);
+  }, [activeStudents, attendanceSheets, today]);
+
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-300">
       {/* Welcome & Quick Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white shadow-xl shadow-slate-950/20 border border-slate-800">
-        <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/60 text-xs font-semibold mb-2">
-            <Award className="w-3.5 h-3.5" />
-            Tech Vision Academic Terminal
+        <div className="flex items-center gap-4">
+          <img
+            src={settings.logoUrl || '/logo.png'}
+            alt="Tech Vision Computer Class Logo"
+            className="w-14 h-14 rounded-2xl object-contain bg-slate-950 border border-slate-700/80 shadow-md shadow-cyan-950/40 shrink-0"
+          />
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/60 text-xs font-semibold mb-1.5">
+              <Award className="w-3.5 h-3.5" />
+              Tech Vision Academic Terminal
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+              Institute Overview & Daily Operations
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+              Real-time database metrics for attendance, fee collections, and workstation allocation.
+            </p>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-            Institute Overview & Daily Operations
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            Real-time database metrics for attendance, fee collections, and workstation allocation.
-          </p>
         </div>
 
         {/* Quick Actions */}
@@ -178,6 +238,73 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
           </button>
         </div>
       </div>
+
+      {/* Continuous Absence Alert Banner (Triggers on 3 or more consecutive scheduled absences) */}
+      {consecutiveAbsentStudents.length > 0 && (
+        <div className="p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-600 text-white shrink-0 shadow-xs">
+                <AlertCircle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-amber-950 uppercase tracking-tight">
+                  Continuous Absence Alert ({consecutiveAbsentStudents.length}{' '}
+                  {consecutiveAbsentStudents.length === 1 ? 'Student' : 'Students'} with 3+ Consecutive Absences)
+                </h3>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  The following students have missed 3 or more consecutive scheduled class days (excluding Sundays & unrecorded sessions).
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate('attendance')}
+              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+            >
+              <CalendarCheck className="w-4 h-4" />
+              Check Attendance Roll
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {consecutiveAbsentStudents.map(({ student: s, consecutiveCount, lastAbsentDate, batchName }) => (
+              <div
+                key={s.id}
+                className="p-3 rounded-xl bg-white border border-amber-200 flex items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[10px] font-black text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                      {s.grNo || s.studentId}
+                    </span>
+                    <span className="font-bold text-xs text-slate-900 truncate">{s.fullName}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 mt-0.5 truncate">
+                    {batchName} • {s.courseName}
+                  </div>
+                  <div className="text-[10px] text-amber-800 font-semibold mt-1 flex items-center gap-2">
+                    <span className="font-extrabold text-rose-600">{consecutiveCount} Days Consecutive Absent</span>
+                    <span>•</span>
+                    <span>Last: {formatDate(lastAbsentDate)}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-slate-400" />
+                    {s.mobile}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <a
+                    href={`tel:${s.mobile}`}
+                    className="inline-flex px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold transition shadow-2xs"
+                  >
+                    Call
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 1-Month Fee Reminder Banner (Triggers when 1 month has passed and fee is still remaining) */}
       {oneMonthDueReminders.length > 0 && (
@@ -238,13 +365,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
                   <div className="text-xs font-black text-rose-600">
                     {formatINR(s.outstandingBalance)}
                   </div>
-                  <div className="text-[10px] text-slate-400">Remaining</div>
-                  <button
-                    onClick={() => onNavigate('fees')}
-                    className="mt-1.5 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition cursor-pointer"
-                  >
-                    Collect
-                  </button>
+                  <div className="flex items-center gap-1 mt-1.5 justify-end">
+                    <button
+                      onClick={() => onNavigate('fees')}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition cursor-pointer"
+                    >
+                      Collect
+                    </button>
+                    <button
+                      onClick={() => setDashboardReminderStudent(s)}
+                      className="px-2 py-1 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 text-[10px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="Generate and Share Fee Reminder"
+                    >
+                      <Share2 className="w-3 h-3 text-rose-600" />
+                      Share
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -314,29 +450,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
           <div className="text-[11px] text-slate-400 mt-1">Pending batch roll</div>
         </div>
 
-        {/* Card 6: Total Outstanding Fees */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Outstanding Fees</span>
-            <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
-              <IndianRupee className="w-4 h-4" />
+        {/* Card 6: Total Outstanding Fees (Admin only) / Students with Dues (Staff) */}
+        {isAdmin ? (
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Outstanding Fees</span>
+              <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+                <IndianRupee className="w-4 h-4" />
+              </div>
             </div>
+            <div className="mt-2 text-xl font-black text-rose-600 truncate">{formatINR(totalOutstandingFees)}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Pending collection (Admin)</div>
           </div>
-          <div className="mt-2 text-xl font-black text-rose-600 truncate">{formatINR(totalOutstandingFees)}</div>
-          <div className="text-[11px] text-slate-400 mt-1">Pending collection</div>
-        </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Students with Dues</span>
+              <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
+                <CreditCard className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-black text-rose-600">{studentsWithPendingFees.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Pending student balances</div>
+          </div>
+        )}
 
-        {/* Card 7: Fees Collected This Month */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Month Collection</span>
-            <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-              <TrendingUp className="w-4 h-4" />
+        {/* Card 7: Fees Collected This Month (Admin only) / Active Batches (Staff) */}
+        {isAdmin ? (
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Month Collection</span>
+              <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                <TrendingUp className="w-4 h-4" />
+              </div>
             </div>
+            <div className="mt-2 text-xl font-black text-emerald-600 truncate">{formatINR(feesCollectedThisMonth)}</div>
+            <div className="text-[11px] text-slate-400 mt-1">{getCurrentMonthName()} (Admin)</div>
           </div>
-          <div className="mt-2 text-xl font-black text-emerald-600 truncate">{formatINR(feesCollectedThisMonth)}</div>
-          <div className="text-[11px] text-slate-400 mt-1">{getCurrentMonthName()}</div>
-        </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Active Batches</span>
+              <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                <CalendarCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-black text-emerald-600">
+              {batches.filter((b) => b.status === 'active').length}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">Scheduled class slots</div>
+          </div>
+        )}
 
         {/* Card 8: Total Computer Seats */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
@@ -585,11 +749,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
               <p className="text-xs text-slate-400 mt-0.5">Latest enrollments</p>
             </div>
             <div className="flex items-center gap-2">
-              {(students.length > 0 || payments.length > 0) && (
+              {isAdmin && (students.length > 0 || payments.length > 0) && (
                 <button
                   onClick={() => setIsResetAllModalOpen(true)}
                   className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                  title="Reset all students and their fees"
+                  title="Reset all students and their fees (Admin Only)"
                 >
                   <Trash2 className="w-3 h-3" />
                   Reset Students & Fees
@@ -639,11 +803,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
               <p className="text-xs text-slate-400 mt-0.5">Payment receipts recorded</p>
             </div>
             <div className="flex items-center gap-2">
-              {payments.length > 0 && (
+              {isAdmin && payments.length > 0 && (
                 <button
                   onClick={() => setIsClearFeesModalOpen(true)}
                   className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                  title="Delete all recent fee collections and reset student balances"
+                  title="Delete all recent fee collections and reset student balances (Admin Only)"
                 >
                   <RotateCcw className="w-3 h-3" />
                   Clear Fee History
@@ -678,16 +842,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
                       <div className="font-extrabold text-emerald-600">{formatINR(p.amount)}</div>
                       <div className="text-[11px] text-slate-400 mt-0.5">{formatDate(p.paymentDate)}</div>
                     </div>
-                    <button
-                      onClick={async () => {
-                        await deleteFeePayment(p.id);
-                        showToast(`Deleted receipt ${p.receiptNo} from fee history.`, 'info');
-                      }}
-                      className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition cursor-pointer"
-                      title="Delete this fee record"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={async () => {
+                          await deleteFeePayment(p.id);
+                          showToast(`Deleted receipt ${p.receiptNo} from fee history.`, 'info');
+                        }}
+                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition cursor-pointer"
+                        title="Delete this fee record (Admin Only)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -831,6 +997,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
         message="This will delete all student records, remove all recent fee collections and fee history, and free all 14 computer workstations. Continue?"
         confirmText="Reset Students & Fees"
         isDestructive
+      />
+
+      {/* AI Fee Reminder Share Modal */}
+      <FeeReminderModal
+        isOpen={!!dashboardReminderStudent}
+        onClose={() => setDashboardReminderStudent(null)}
+        student={dashboardReminderStudent}
       />
     </div>
   );
