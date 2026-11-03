@@ -171,6 +171,14 @@ export const StaffManagement: React.FC = () => {
         </button>
       </div>
 
+      {/* Faculty on duty notice */}
+      <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
+        <Shield className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+        <div className="text-xs text-emerald-950 leading-relaxed">
+          <strong className="font-bold text-emerald-900">Faculty Duty Verification Active:</strong> When opening the shared staff account (<code className="font-mono font-bold text-emerald-800">techvisioncomputerclass@gmail.com</code>), the app automatically prompts <strong className="font-bold">"Who is There: Diya Patel or Jinal Prajapati"</strong> every time so fee collections, attendance markings, and admissions are transparently attributed in the audit logs.
+        </div>
+      </div>
+
       {/* Helpful info banner */}
       <div className="p-4 rounded-2xl bg-cyan-50/60 border border-cyan-200/80 flex items-start gap-3">
         <Info className="w-5 h-5 text-cyan-600 shrink-0 mt-0.5" />

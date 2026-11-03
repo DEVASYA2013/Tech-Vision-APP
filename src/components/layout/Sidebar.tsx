@@ -56,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   setIsMobileOpen,
 }) => {
-  const { isAdmin, userProfile } = useAuth();
+  const { isAdmin, isStaffAccount, activeStaffDuty, setIsStaffDutyModalOpen, userProfile } = useAuth();
   const { students, enquiries, settings, loadDemoData, clearDemoData } = useInstitute();
   const { showToast } = useToast();
 
@@ -254,6 +254,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
           <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
         </a>
+        {isStaffAccount && (
+          <button
+            onClick={() => setIsStaffDutyModalOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/80 hover:bg-emerald-900/80 text-[11px] font-bold text-emerald-300 transition cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5 truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span>Duty: {activeStaffDuty || 'Select'}</span>
+            </span>
+            <span className="text-[10px] bg-emerald-800 px-1.5 py-0.5 rounded text-emerald-100">
+              Switch
+            </span>
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-cyan-400 text-xs shrink-0">
             {userProfile?.displayName?.slice(0, 2).toUpperCase() || 'TV'}

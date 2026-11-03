@@ -55,6 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
     settings,
     attendanceSheets,
     auditLogs,
+    isClassClosedOnDate,
     deleteFeePayment,
     clearAllFeeHistoryAndResetBalances,
     resetAllStudentsAndFees,
@@ -155,7 +156,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
 
       for (const sheet of batchSheets) {
         const d = new Date(sheet.date + 'T00:00:00');
-        if (d.getDay() === 0) continue; // Skip Sundays
+        if (d.getDay() === 0 || isClassClosedOnDate(sheet.date).isClosed) continue;
 
         const rec = sheet.records.find((r) => r.studentId === s.studentId);
         // Blank or unrecorded attendance is not treated as absent
@@ -238,6 +239,66 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenAddStude
           </button>
         </div>
       </div>
+
+      {/* Today Closed Banner (Sunday Leave or Custom Celebration) */}
+      {(() => {
+        const todayStatus = isClassClosedOnDate(today);
+        if (!todayStatus.isClosed) return null;
+        return (
+          <div
+            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              todayStatus.isSunday
+                ? 'bg-gradient-to-r from-indigo-50 to-blue-50 border-indigo-200 text-indigo-950'
+                : 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 text-amber-950'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  todayStatus.isSunday
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                    : 'bg-amber-600 text-white shadow-md shadow-amber-600/20'
+                }`}
+              >
+                {todayStatus.isSunday ? (
+                  <Clock className="w-5 h-5" />
+                ) : (
+                  <Award className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider">
+                    {todayStatus.isSunday
+                      ? 'Scheduled Sunday Weekly Leave'
+                      : `Classes Closed: ${todayStatus.closure?.title}`}
+                  </span>
+                  <span
+                    className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                      todayStatus.isSunday
+                        ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {todayStatus.isSunday ? 'Weekly Off' : todayStatus.closure?.type.toUpperCase()}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {todayStatus.isSunday
+                    ? 'All 12 batches are closed today for scheduled Sunday leave. Regular classes resume Monday.'
+                    : todayStatus.closure?.reason || 'Institute declared closed for celebration/event.'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate('attendance')}
+              className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 text-xs font-bold transition self-start sm:self-center cursor-pointer shadow-xs"
+            >
+              Manage Holiday Closures
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Continuous Absence Alert Banner (Triggers on 3 or more consecutive scheduled absences) */}
       {consecutiveAbsentStudents.length > 0 && (

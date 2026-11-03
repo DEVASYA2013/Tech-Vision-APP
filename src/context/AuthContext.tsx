@@ -27,12 +27,19 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase/confi
 import { UserProfile, UserRole } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+export type StaffDutyName = 'Diya Patel' | 'Jinal Prajapati';
+
 interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  isStaffAccount: boolean;
+  activeStaffDuty: StaffDutyName | null;
+  setActiveStaffDuty: (name: StaffDutyName) => void;
+  isStaffDutyModalOpen: boolean;
+  setIsStaffDutyModalOpen: (open: boolean) => void;
   isFirstAdminSetupAvailable: boolean;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   registerFirstAdmin: (email: string, pass: string, name: string, phone: string) => Promise<void>;
@@ -46,6 +53,7 @@ interface AuthContextType {
 }
 
 const STAFF_SESSION_STORAGE_KEY = 'tv_staff_session_uid';
+const STAFF_DUTY_SESSION_KEY = 'tv_active_duty_staff';
 
 function createSessionUserFromProfile(profile: UserProfile): User {
   return {
@@ -89,6 +97,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirstAdminSetupAvailable, setIsFirstAdminSetupAvailable] = useState(false);
+  const [activeStaffDuty, setActiveStaffDutyState] = useState<StaffDutyName | null>(() => {
+    return (sessionStorage.getItem(STAFF_DUTY_SESSION_KEY) as StaffDutyName) || null;
+  });
+  const [isStaffDutyModalOpen, setIsStaffDutyModalOpen] = useState(false);
 
   // Check if any admin exists in the database
   const checkFirstAdminNeeded = async () => {
@@ -524,6 +536,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(STAFF_DUTY_SESSION_KEY);
+    setActiveStaffDutyState(null);
+    setIsStaffDutyModalOpen(false);
     await signOut(auth).catch(() => {});
     setCurrentUser(null);
     setUserProfile(null);
@@ -539,6 +554,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ? userProfile.role === 'admin' && userProfile.isActive !== false
     : currentUser?.email === 'yoyo.kingdev.yoyo@gmail.com';
   const isStaff = Boolean(userProfile?.role === 'staff' || isAdmin);
+  const isStaffAccount = Boolean(
+    currentUser?.email?.toLowerCase() === 'techvisioncomputerclass@gmail.com' ||
+    (userProfile?.role === 'staff' && !isAdmin)
+  );
+
+  const setActiveStaffDuty = (name: StaffDutyName) => {
+    sessionStorage.setItem(STAFF_DUTY_SESSION_KEY, name);
+    localStorage.setItem('tv_last_active_duty_staff', name);
+    setActiveStaffDutyState(name);
+    setIsStaffDutyModalOpen(false);
+    setUserProfile((prev) => (prev ? { ...prev, displayName: name } : prev));
+  };
+
+  // Prompt staff account to select who is on duty whenever opening app
+  useEffect(() => {
+    if (!loading && currentUser && isStaffAccount) {
+      const saved = sessionStorage.getItem(STAFF_DUTY_SESSION_KEY) as StaffDutyName | null;
+      if (!saved) {
+        setIsStaffDutyModalOpen(true);
+      } else if (saved !== activeStaffDuty) {
+        setActiveStaffDutyState(saved);
+        setUserProfile((prev) => (prev ? { ...prev, displayName: saved } : prev));
+      }
+    }
+  }, [loading, currentUser?.uid, isStaffAccount]);
 
   return (
     <AuthContext.Provider
@@ -548,6 +588,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isAdmin,
         isStaff,
+        isStaffAccount,
+        activeStaffDuty,
+        setActiveStaffDuty,
+        isStaffDutyModalOpen,
+        setIsStaffDutyModalOpen,
         isFirstAdminSetupAvailable,
         signInWithEmail,
         registerFirstAdmin,

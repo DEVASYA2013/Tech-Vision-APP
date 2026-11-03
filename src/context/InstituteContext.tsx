@@ -27,6 +27,7 @@ import {
   InstituteNotification,
   AttendanceRecordItem,
   Enquiry,
+  ClassClosure,
 } from '../types';
 import {
   getTodayDateString,
@@ -97,6 +98,20 @@ interface InstituteContextType {
   sync14ComputerLayout: () => Promise<void>;
   updateSettings: (newSettings: Partial<InstituteSettings>) => Promise<void>;
   markNotificationRead: (notificationId: string) => Promise<void>;
+  closeClassesForDate: (
+    date: string,
+    title: string,
+    reason?: string,
+    type?: ClassClosure['type']
+  ) => Promise<void>;
+  reopenClassesForDate: (date: string) => Promise<void>;
+  isDateSunday: (dateStr: string) => boolean;
+  isClassClosedOnDate: (dateStr: string) => {
+    isClosed: boolean;
+    isSunday: boolean;
+    closure?: ClassClosure;
+  };
+  getEffectiveStaffName: () => string;
   loadDemoData: () => Promise<void>;
   clearDemoData: () => Promise<void>;
 }
@@ -148,13 +163,14 @@ const defaultSettings: InstituteSettings = {
   timezone: 'Asia/Kolkata',
   receiptPrefix: 'TV/2026/',
   tagline: 'IT Education • Creating IT professionals for the next generation',
+  closedDates: [],
   updatedAt: new Date().toISOString(),
 };
 
 const InstituteContext = createContext<InstituteContextType | undefined>(undefined);
 
 export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, userProfile, isAdmin } = useAuth();
+  const { currentUser, userProfile, isAdmin, activeStaffDuty } = useAuth();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
@@ -170,14 +186,23 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const isSyncingSeatsRef = useRef(false);
   const hasAutoResetRef = useRef(false);
 
-  // Helper for audit logging
+  // Determine the active actor name (Diya Patel, Jinal Prajapati, or Admin)
+  const getEffectiveStaffName = (): string => {
+    if (activeStaffDuty) return activeStaffDuty;
+    if (userProfile?.displayName) return userProfile.displayName;
+    if (currentUser?.email) return currentUser.email;
+    return 'Authorized Staff';
+  };
+
+  // Helper for audit logging with accurate attribution to who did the changes
   const logAudit = async (action: string, targetEntity: string, targetId: string, details: string) => {
     try {
+      const actorName = getEffectiveStaffName();
       const logEntry: Omit<AuditLog, 'id'> = {
         logId: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         action,
         performedByUid: currentUser?.uid || 'system',
-        performedByName: userProfile?.displayName || currentUser?.email || 'System User',
+        performedByName: actorName,
         performedByRole: userProfile?.role || 'admin',
         targetEntity,
         targetId,
@@ -187,6 +212,97 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       await addDoc(collection(db, 'auditLogs'), logEntry);
     } catch (err) {
       console.warn("Audit log creation skipped:", err);
+    }
+  };
+
+  // Check if a date is Sunday (Automatic weekly holiday)
+  const isDateSunday = (dateStr: string): boolean => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.getDay() === 0;
+  };
+
+  // Check if classes are closed on a date (either Sunday or manually declared celebration/holiday)
+  const isClassClosedOnDate = (dateStr: string): {
+    isClosed: boolean;
+    isSunday: boolean;
+    closure?: ClassClosure;
+  } => {
+    if (!dateStr) return { isClosed: false, isSunday: false };
+    const isSunday = isDateSunday(dateStr);
+    const closure = (settings.closedDates || []).find((c) => c.date === dateStr);
+    return {
+      isClosed: isSunday || Boolean(closure),
+      isSunday,
+      closure,
+    };
+  };
+
+  // Manually declare classes closed for a day (e.g. Diwali, Uttarayan, Annual Function)
+  const closeClassesForDate = async (
+    date: string,
+    title: string,
+    reason = '',
+    type: ClassClosure['type'] = 'celebration'
+  ): Promise<void> => {
+    try {
+      const existing = settings.closedDates || [];
+      const newClosure: ClassClosure = {
+        id: `closure_${date}`,
+        date,
+        title: title.trim(),
+        reason: reason.trim(),
+        type,
+        closedBy: getEffectiveStaffName(),
+        createdAt: new Date().toISOString(),
+      };
+      const updated = [...existing.filter((c) => c.date !== date), newClosure].sort((a, b) =>
+        a.date.localeCompare(b.date)
+      );
+
+      await setDoc(
+        doc(db, 'instituteSettings', 'general'),
+        {
+          closedDates: updated,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      await logAudit(
+        'CLASS_CLOSURE_DECLARED',
+        'InstituteSettings',
+        date,
+        `Declared classes closed on ${date} for "${title}". Reason: ${reason || 'Celebration / Event'}. By ${getEffectiveStaffName()}`
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'instituteSettings/general');
+    }
+  };
+
+  // Re-open classes on a previously closed day
+  const reopenClassesForDate = async (date: string): Promise<void> => {
+    try {
+      const existing = settings.closedDates || [];
+      const updated = existing.filter((c) => c.date !== date);
+
+      await setDoc(
+        doc(db, 'instituteSettings', 'general'),
+        {
+          closedDates: updated,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      await logAudit(
+        'CLASS_CLOSURE_REMOVED',
+        'InstituteSettings',
+        date,
+        `Re-opened classes for ${date}. Closure cancelled by ${getEffectiveStaffName()}`
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'instituteSettings/general');
     }
   };
 
@@ -432,24 +548,41 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const list: InstituteNotification[] = [];
     const today = getTodayDateString();
 
-    // 1. Unmarked attendance today for active batches
-    const activeBatches = batches.filter(b => b.status === 'active');
-    const markedBatchIdsToday = new Set(attendanceSheets.filter(a => a.date === today).map(a => a.batchId));
+    // 1. Unmarked attendance today for active batches (skipped if today is Sunday or classes closed for celebration/holiday)
+    const todayClosureStatus = isClassClosedOnDate(today);
+    if (!todayClosureStatus.isClosed) {
+      const activeBatches = batches.filter(b => b.status === 'active');
+      const markedBatchIdsToday = new Set(attendanceSheets.filter(a => a.date === today).map(a => a.batchId));
 
-    activeBatches.forEach(b => {
-      if (!markedBatchIdsToday.has(b.batchId)) {
-        list.push({
-          id: `att_${b.batchId}_${today}`,
-          notificationId: `att_${b.batchId}`,
-          type: 'unmarked_attendance',
-          title: `Attendance Pending: ${b.batchName}`,
-          message: `Class attendance for ${b.batchName} (${b.startTime} - ${b.endTime}) has not been submitted yet today.`,
-          relatedId: b.batchId,
-          isRead: false,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    });
+      activeBatches.forEach(b => {
+        if (!markedBatchIdsToday.has(b.batchId)) {
+          list.push({
+            id: `att_${b.batchId}_${today}`,
+            notificationId: `att_${b.batchId}`,
+            type: 'unmarked_attendance',
+            title: `Attendance Pending: ${b.batchName}`,
+            message: `Class attendance for ${b.batchName} (${b.startTime} - ${b.endTime}) has not been submitted yet today.`,
+            relatedId: b.batchId,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      });
+    } else {
+      list.push({
+        id: `closure_today_${today}`,
+        notificationId: `closure_today`,
+        type: 'info',
+        title: todayClosureStatus.isSunday
+          ? 'Weekly Leave: Sunday Holiday'
+          : `Classes Closed: ${todayClosureStatus.closure?.title || 'Celebration'}`,
+        message: todayClosureStatus.isSunday
+          ? 'Tech Vision Computer Class is closed every Sunday for scheduled weekly leave.'
+          : `${todayClosureStatus.closure?.title}: Classes are officially closed today.${todayClosureStatus.closure?.reason ? ' (' + todayClosureStatus.closure.reason + ')' : ''}`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     // 2. 1-Month Fee Due Reminders for students with remaining fee
     const studentsWithRemainingFee = students.filter(
@@ -539,9 +672,9 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       let mostRecentAbsenceDate = '';
 
       for (const sheet of batchSheets) {
-        // Skip Sundays or days when the batch had no scheduled class
+        // Skip Sundays or days when classes were closed for a celebration/holiday
         const sheetDateObj = new Date(sheet.date + 'T00:00:00');
-        if (sheetDateObj.getDay() === 0) continue; // Sunday
+        if (sheetDateObj.getDay() === 0 || isClassClosedOnDate(sheet.date).isClosed) continue;
 
         const rec = sheet.records.find(r => r.studentId === s.studentId);
         // Blank or unmarked attendance is NOT treated as absent
@@ -575,7 +708,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     setNotifications(list);
-  }, [batches, attendanceSheets, students, seats, enquiries, payments]);
+  }, [batches, attendanceSheets, students, seats, enquiries, payments, settings.closedDates]);
 
   // Helper to resolve a student from local state or directly from Firestore if state hasn't synced yet
   const resolveStudent = async (idOrStudentId: string): Promise<Student | null> => {
@@ -681,7 +814,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           transactionRef: '',
           paymentDate: data.admissionDate || getTodayDateString(),
           recordedByStaffId: currentUser?.uid || 'staff',
-          recordedByStaffName: userProfile?.displayName || 'Authorized Staff',
+          recordedByStaffName: getEffectiveStaffName(),
           remarks: 'Admission Fee Payment',
           isReversal: false,
           createdAt: now,
@@ -910,7 +1043,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const newEnquiry: Omit<Enquiry, 'id'> = {
       ...data,
       enquiryId,
-      handledByName: data.handledByName || userProfile?.displayName || currentUser?.email || 'Counselor',
+      handledByName: data.handledByName || getEffectiveStaffName(),
       createdAt: now,
       updatedAt: now,
     };
@@ -1144,7 +1277,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       transactionRef,
       paymentDate: getTodayDateString(),
       recordedByStaffId: currentUser?.uid || 'staff',
-      recordedByStaffName: userProfile?.displayName || 'Authorized Staff',
+      recordedByStaffName: getEffectiveStaffName(),
       remarks,
       isReversal: false,
       createdAt: now,
@@ -1356,7 +1489,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         batchId,
         records,
         markedByStaffId: currentUser?.uid || 'staff',
-        markedByStaffName: userProfile?.displayName || 'Instructor',
+        markedByStaffName: getEffectiveStaffName(),
         createdAt: now,
         updatedAt: now,
       };
@@ -1998,6 +2131,11 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         sync14ComputerLayout,
         updateSettings,
         markNotificationRead,
+        closeClassesForDate,
+        reopenClassesForDate,
+        isDateSunday,
+        isClassClosedOnDate,
+        getEffectiveStaffName,
         loadDemoData,
         clearDemoData,
       }}

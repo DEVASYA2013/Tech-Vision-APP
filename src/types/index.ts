@@ -162,6 +162,16 @@ export interface AuditLog {
   timestamp: string;
 }
 
+export interface ClassClosure {
+  id: string;
+  date: string; // YYYY-MM-DD
+  title: string; // e.g. "Diwali Celebration", "Uttarayan"
+  reason?: string;
+  type: 'festival' | 'celebration' | 'event' | 'holiday' | 'other';
+  closedBy?: string;
+  createdAt: string;
+}
+
 export interface InstituteSettings {
   id: string;
   instituteName: string;
@@ -175,6 +185,7 @@ export interface InstituteSettings {
   timezone: string;
   receiptPrefix: string;
   tagline?: string;
+  closedDates?: ClassClosure[];
   updatedAt: string;
 }
 

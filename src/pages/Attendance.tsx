@@ -10,16 +10,44 @@ import {
   Users,
   Calendar,
   AlertCircle,
-  Filter,
+  PartyPopper,
+  CalendarOff,
+  Plus,
+  Trash2,
+  X,
+  Info,
+  Check,
+  Sparkles,
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
-import { AttendanceStatus, AttendanceRecordItem } from '../types';
+import { AttendanceStatus, AttendanceRecordItem, ClassClosure } from '../types';
 import { getTodayDateString, formatDate } from '../utils/formatters';
 import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
 
+const FESTIVAL_PRESETS = [
+  { title: 'Diwali Celebration & Vacation', type: 'festival', reason: 'Deepawali Festival & New Year Holidays' },
+  { title: 'Uttarayan / Makar Sankranti', type: 'festival', reason: 'Kite Flying Festival & State Holiday' },
+  { title: 'Independence Day', type: 'holiday', reason: 'National Holiday (15th August)' },
+  { title: 'Republic Day', type: 'holiday', reason: 'National Holiday (26th January)' },
+  { title: 'Janmashtami Celebration', type: 'festival', reason: 'Lord Krishna Janmashtami' },
+  { title: 'Ganesh Chaturthi', type: 'festival', reason: 'Ganesh Utsav Celebration' },
+  { title: 'Annual Project Exhibition', type: 'event', reason: 'Institute Computer Exhibition & Project Showcase' },
+  { title: 'Server / Lab Maintenance', type: 'other', reason: 'Hardware & OS upgrades across 14 lab workstations' },
+];
+
 export const Attendance: React.FC = () => {
-  const { batches, courses, students, attendanceSheets, saveAttendance } = useInstitute();
+  const {
+    batches,
+    students,
+    attendanceSheets,
+    settings,
+    saveAttendance,
+    isDateSunday,
+    isClassClosedOnDate,
+    closeClassesForDate,
+    reopenClassesForDate,
+  } = useInstitute();
   const { showToast } = useToast();
 
   const today = getTodayDateString();
@@ -28,11 +56,28 @@ export const Attendance: React.FC = () => {
   const [records, setRecords] = useState<AttendanceRecordItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Modals
+  const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
+  const [isHolidaysListOpen, setIsHolidaysListOpen] = useState(false);
+
+  // Closure Form state
+  const [closureDate, setClosureDate] = useState(selectedDate);
+  const [closureTitle, setClosureTitle] = useState('');
+  const [closureReason, setClosureReason] = useState('');
+  const [closureType, setClosureType] = useState<ClassClosure['type']>('celebration');
+  const [isSubmittingClosure, setIsSubmittingClosure] = useState(false);
+
   // Active batch object
   const currentBatch = batches.find((b) => b.batchId === selectedBatchId);
   const enrolledStudents = students.filter(
     (s) => s.batchId === selectedBatchId && s.status === 'active'
   );
+
+  // Date closure check
+  const closureStatus = isClassClosedOnDate(selectedDate);
+  const isSunday = closureStatus.isSunday;
+  const isDateClosed = closureStatus.isClosed;
+  const currentClosure = closureStatus.closure;
 
   // Sync attendance state when date or batch changes
   const existingSheet = attendanceSheets.find(
@@ -115,12 +160,52 @@ export const Attendance: React.FC = () => {
     showToast('Attendance report exported to CSV.', 'success');
   };
 
+  const openCloseModalForCurrentDate = () => {
+    setClosureDate(selectedDate);
+    setClosureTitle('');
+    setClosureReason('');
+    setClosureType('celebration');
+    setIsClosureModalOpen(true);
+  };
+
+  const handlePresetSelect = (preset: typeof FESTIVAL_PRESETS[0]) => {
+    setClosureTitle(preset.title);
+    setClosureType(preset.type as ClassClosure['type']);
+    setClosureReason(preset.reason);
+  };
+
+  const handleConfirmClosure = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closureTitle.trim()) {
+      showToast('Please enter the celebration or closure event name.', 'error');
+      return;
+    }
+    setIsSubmittingClosure(true);
+    try {
+      await closeClassesForDate(closureDate, closureTitle, closureReason, closureType);
+      showToast(`Classes closed for ${formatDate(closureDate)} on occasion of "${closureTitle}".`, 'success');
+      setIsClosureModalOpen(false);
+    } catch {
+      showToast('Failed to declare class closure.', 'error');
+    } finally {
+      setIsSubmittingClosure(false);
+    }
+  };
+
+  const handleReopenClasses = async (dateToReopen: string) => {
+    try {
+      await reopenClassesForDate(dateToReopen);
+      showToast(`Re-opened classes for ${formatDate(dateToReopen)}. Students can attend.`, 'success');
+    } catch {
+      showToast('Failed to reopen classes.', 'error');
+    }
+  };
+
   // Calculations for current roll
   const presentCount = records.filter((r) => r.status === 'present').length;
   const absentCount = records.filter((r) => r.status === 'absent').length;
-  const lateCount = records.filter((r) => r.status === 'late').length;
-  const leaveCount = records.filter((r) => r.status === 'leave').length;
   const unmarkedCount = records.filter((r) => r.status === 'unmarked' || !r.status).length;
+  const declaredClosures = settings.closedDates || [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -132,11 +217,29 @@ export const Attendance: React.FC = () => {
             Daily Student Attendance
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Mark class roll, track student presence, and maintain historical session records.
+            Mark class roll, manage Sunday leave, and declare class closures for celebrations or events.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Close Class for a Day Button */}
+          <button
+            onClick={openCloseModalForCurrentDate}
+            className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <PartyPopper className="w-4 h-4 text-amber-600" />
+            Close Classes for a Day
+          </button>
+
+          {/* View Scheduled Closures */}
+          <button
+            onClick={() => setIsHolidaysListOpen(true)}
+            className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <CalendarOff className="w-4 h-4 text-slate-500" />
+            <span>Holidays ({declaredClosures.length})</span>
+          </button>
+
           <button
             onClick={() => window.print()}
             className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -144,6 +247,7 @@ export const Attendance: React.FC = () => {
             <Printer className="w-4 h-4" />
             Print Roll
           </button>
+
           <button
             onClick={handleExportCSV}
             className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -151,6 +255,7 @@ export const Attendance: React.FC = () => {
             <Download className="w-4 h-4" />
             Export CSV
           </button>
+
           <button
             onClick={handleSave}
             disabled={isSaving || records.length === 0}
@@ -162,14 +267,83 @@ export const Attendance: React.FC = () => {
         </div>
       </div>
 
+      {/* SPECIAL NOTICE BANNERS: Sunday Leave OR Manual Closure */}
+      {isSunday && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-900 via-blue-900 to-slate-900 text-white border border-indigo-700/60 shadow-lg shadow-indigo-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+              <CalendarOff className="w-5 h-5 text-indigo-300" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-800/80 text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-0.5">
+                Automatic Weekly Off
+              </div>
+              <h3 className="text-base font-black text-white">
+                Sunday Holiday: Classes Closed
+              </h3>
+              <p className="text-xs text-indigo-200 mt-0.5">
+                Tech Vision Computer Class is closed every Sunday. Students have a scheduled weekly leave and are not marked absent.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-indigo-200 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 self-start sm:self-center">
+            {formatDate(selectedDate)}
+          </span>
+        </div>
+      )}
+
+      {currentClosure && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white border border-amber-500 shadow-lg shadow-amber-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 border border-white/30">
+              <PartyPopper className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-extrabold text-white uppercase tracking-wider mb-0.5">
+                <Sparkles className="w-3 h-3" />
+                Special Closure: {currentClosure.type.toUpperCase()}
+              </div>
+              <h3 className="text-base font-black text-white">
+                Classes Closed: {currentClosure.title}
+              </h3>
+              <p className="text-xs text-amber-100 mt-0.5">
+                {currentClosure.reason || 'Institute declared closed on this day.'}
+                {currentClosure.closedBy ? ` • Marked by ${currentClosure.closedBy}` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            <button
+              onClick={() => handleReopenClasses(selectedDate)}
+              className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-black transition shadow-sm cursor-pointer"
+            >
+              Re-open Classes on this Day
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Selector Bar */}
       <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Date Picker */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Attendance Date (Asia/Kolkata)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">
+                Attendance Date (Asia/Kolkata)
+              </label>
+              {isSunday && (
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded-md">
+                  Sunday Off
+                </span>
+              )}
+              {currentClosure && (
+                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded-md">
+                  Closed
+                </span>
+              )}
+            </div>
             <input
               type="date"
               value={selectedDate}
@@ -241,33 +415,55 @@ export const Attendance: React.FC = () => {
 
         {/* Batch Attendance Status Banner */}
         <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
-          isSheetSaved
+          isDateClosed
+            ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+            : isSheetSaved
             ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
             : 'bg-amber-50/70 border-amber-200 text-amber-900'
         }`}>
           <div className="flex items-center gap-2">
-            {isSheetSaved ? (
+            {isDateClosed ? (
+              <CalendarOff className="w-4 h-4 text-amber-700 shrink-0" />
+            ) : isSheetSaved ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
               <Clock className="w-4 h-4 text-amber-600 shrink-0" />
             )}
             <div>
               <span className="font-bold">
-                {isSheetSaved ? 'Batch Attendance Recorded' : 'Batch Attendance Not Yet Marked'}
+                {isSunday
+                  ? 'Sunday Weekly Off (Classes Closed)'
+                  : currentClosure
+                  ? `Classes Officially Closed: ${currentClosure.title}`
+                  : isSheetSaved
+                  ? 'Batch Attendance Recorded'
+                  : 'Batch Attendance Not Yet Marked'}
               </span>
               <span className="text-[11px] ml-1.5 opacity-80">
-                {isSheetSaved
+                {isSunday
+                  ? 'Automatic weekly holiday. Roll is not required on Sundays.'
+                  : currentClosure
+                  ? `Students have holiday for ${currentClosure.title}.`
+                  : isSheetSaved
                   ? `Saved for ${currentBatch?.batchName || selectedBatchId} on ${formatDate(selectedDate)} (Marked by ${existingSheet?.markedByStaffName || 'Staff'})`
                   : `All students start as blank/unmarked for ${formatDate(selectedDate)} until marked and saved.`}
               </span>
             </div>
           </div>
           <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-            isSheetSaved
+            isDateClosed
+              ? 'bg-amber-100 text-amber-900 border-amber-300'
+              : isSheetSaved
               ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
               : 'bg-amber-100 text-amber-800 border-amber-300'
           }`}>
-            {isSheetSaved ? 'Saved Roll' : 'Blank / Unmarked'}
+            {isSunday
+              ? 'Sunday Off'
+              : currentClosure
+              ? 'Closed Day'
+              : isSheetSaved
+              ? 'Saved Roll'
+              : 'Blank / Unmarked'}
           </span>
         </div>
       </div>
@@ -398,6 +594,231 @@ export const Attendance: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* MODAL: Declare Class Closure for a Day / Celebration */}
+      {isClosureModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative overflow-hidden animate-in zoom-in-95">
+            <button
+              onClick={() => setIsClosureModalOpen(false)}
+              className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+                <PartyPopper className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Close Classes for a Day / Event
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Declare holiday for Diwali, Uttarayan, celebration, or institute event.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="mb-4">
+              <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                Quick Celebration / Holiday Presets
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {FESTIVAL_PRESETS.map((preset) => (
+                  <button
+                    key={preset.title}
+                    type="button"
+                    onClick={() => handlePresetSelect(preset)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 text-[11px] font-semibold transition cursor-pointer border border-slate-200"
+                  >
+                    + {preset.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmClosure} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Closure Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={closureDate}
+                  onChange={(e) => setClosureDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Celebration / Event Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={closureTitle}
+                  onChange={(e) => setClosureTitle(e.target.value)}
+                  placeholder="e.g. Diwali Celebration & Vacation, Uttarayan, Annual Day"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Closure Category
+                </label>
+                <select
+                  value={closureType}
+                  onChange={(e) => setClosureType(e.target.value as ClassClosure['type'])}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                >
+                  <option value="festival">Festival & Cultural Celebration</option>
+                  <option value="celebration">Institute Celebration</option>
+                  <option value="event">Academic Event / Exhibition</option>
+                  <option value="holiday">Public / State Holiday</option>
+                  <option value="other">Maintenance / Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Reason / Announcement for Students
+                </label>
+                <textarea
+                  rows={2}
+                  value={closureReason}
+                  onChange={(e) => setClosureReason(e.target.value)}
+                  placeholder="e.g. Classes remain closed for Diwali festivities. Regular sessions resume Monday."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p>
+                  <strong>No Attendance Penalties:</strong> On closed days, student absence streak reminders are paused and attendance pending alerts are disabled.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsClosureModalOpen(false)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingClosure}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black transition shadow-md shadow-amber-900/20 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingClosure ? 'Closing...' : 'Close Classes for this Day'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: View All Scheduled Closures & Holidays */}
+      {isHolidaysListOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative overflow-hidden animate-in zoom-in-95">
+            <button
+              onClick={() => setIsHolidaysListOpen(false)}
+              className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white flex items-center justify-center shadow-md">
+                  <CalendarOff className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    Institute Holidays & Class Closures
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Sundays are automatic weekly leave. Listed below are custom celebration closures.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Sunday Notice */}
+            <div className="p-3 mb-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>
+                <strong>Every Sunday:</strong> Scheduled weekly leave across all batches (Automatic).
+              </span>
+            </div>
+
+            {/* List of Custom Closures */}
+            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-2xl">
+              {declaredClosures.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  No custom festival or celebration closures scheduled yet.
+                </div>
+              ) : (
+                declaredClosures.map((c) => (
+                  <div key={c.id || c.date} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-slate-900">{c.title}</span>
+                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                          {c.type}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Date: <strong className="text-slate-700">{formatDate(c.date)}</strong>
+                        {c.reason ? ` • ${c.reason}` : ''}
+                      </div>
+                      {c.closedBy && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Declared by: {c.closedBy}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleReopenClasses(c.date)}
+                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Re-open
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setIsHolidaysListOpen(false);
+                  openCloseModalForCurrentDate();
+                }}
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Add New Closure / Celebration
+              </button>
+              <button
+                onClick={() => setIsHolidaysListOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -21,6 +21,7 @@ import { GoogleIntegrations } from './pages/GoogleIntegrations';
 import { AuditLogs } from './pages/AuditLogs';
 import { InstituteSettings } from './pages/InstituteSettings';
 import { HelpBackup } from './pages/HelpBackup';
+import { StaffDutyModal } from './components/auth/StaffDutyModal';
 import { WifiOff, Loader2 } from 'lucide-react';
 
 function useOnlineStatus() {
@@ -47,7 +48,7 @@ function useOnlineStatus() {
 const ADMIN_ONLY_TABS: NavTab[] = ['staff', 'audit', 'settings'];
 
 const MainAppContent: React.FC = () => {
-  const { currentUser, userProfile, isAdmin, loading } = useAuth();
+  const { currentUser, userProfile, isAdmin, activeStaffDuty, loading } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showFirstAdminView, setShowFirstAdminView] = useState(false);
@@ -101,6 +102,9 @@ const MainAppContent: React.FC = () => {
   return (
     <InstituteProvider>
       <div className="min-h-screen bg-slate-100 flex flex-col antialiased font-sans text-slate-900">
+        {/* Staff Duty Verification Modal */}
+        <StaffDutyModal canCloseWithoutSelect={Boolean(activeStaffDuty)} />
+
         {/* Offline Warning Banner */}
         {!isOnline && (
           <div className="bg-amber-600 text-white text-xs font-bold py-1.5 px-4 text-center flex items-center justify-center gap-2 sticky top-0 z-50">

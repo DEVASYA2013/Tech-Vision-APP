@@ -27,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   setCurrentTab,
   setIsMobileOpen,
 }) => {
-  const { currentUser, userProfile, isAdmin, logout } = useAuth();
+  const { currentUser, userProfile, isAdmin, isStaffAccount, activeStaffDuty, setIsStaffDutyModalOpen, logout } = useAuth();
   const { settings, notifications, markNotificationRead } = useInstitute();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -99,7 +99,25 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-2.5 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Active Duty Staff Badge for staff account */}
+        {isStaffAccount && (
+          <button
+            onClick={() => setIsStaffDutyModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 hover:border-emerald-300 text-xs text-emerald-950 transition shadow-xs cursor-pointer group"
+            title="Click to switch who is on duty (Diya Patel or Jinal Prajapati)"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-[11px] text-emerald-700 font-semibold hidden sm:inline">On Duty:</span>
+            <span className="font-extrabold text-[11px] sm:text-xs text-emerald-950 truncate max-w-[110px]">
+              {activeStaffDuty || 'Select Staff'}
+            </span>
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md group-hover:bg-emerald-200 transition">
+              Switch
+            </span>
+          </button>
+        )}
+
         {/* PWA Install Button */}
         <PWAInstallButton />
 
@@ -208,6 +226,20 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               <div className="py-1">
+                {isStaffAccount && (
+                  <button
+                    onClick={() => {
+                      setIsStaffDutyModalOpen(true);
+                      setShowProfileMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 flex items-center justify-between transition cursor-pointer"
+                  >
+                    <span>Switch Faculty on Duty</span>
+                    <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                      {activeStaffDuty || 'Select'}
+                    </span>
+                  </button>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => {
