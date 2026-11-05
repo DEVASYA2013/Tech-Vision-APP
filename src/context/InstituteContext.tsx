@@ -102,7 +102,8 @@ interface InstituteContextType {
     date: string,
     title: string,
     reason?: string,
-    type?: ClassClosure['type']
+    type?: ClassClosure['type'],
+    endDate?: string
   ) => Promise<void>;
   reopenClassesForDate: (date: string) => Promise<void>;
   isDateSunday: (dateStr: string) => boolean;
@@ -222,7 +223,7 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return d.getDay() === 0;
   };
 
-  // Check if classes are closed on a date (either Sunday or manually declared celebration/holiday)
+  // Check if classes are closed on a date (either Sunday or manually declared celebration/holiday range)
   const isClassClosedOnDate = (dateStr: string): {
     isClosed: boolean;
     isSunday: boolean;
@@ -230,7 +231,11 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   } => {
     if (!dateStr) return { isClosed: false, isSunday: false };
     const isSunday = isDateSunday(dateStr);
-    const closure = (settings.closedDates || []).find((c) => c.date === dateStr);
+    const closure = (settings.closedDates || []).find((c) => {
+      const start = c.date;
+      const end = c.endDate && c.endDate >= c.date ? c.endDate : c.date;
+      return dateStr >= start && dateStr <= end;
+    });
     return {
       isClosed: isSunday || Boolean(closure),
       isSunday,
@@ -238,17 +243,21 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   };
 
-  // Manually declare classes closed for a day (e.g. Diwali, Uttarayan, Annual Function)
+  // Manually declare classes closed for a day or range of days (e.g. Diwali Vacation, Uttarayan, Annual Function)
   const closeClassesForDate = async (
     date: string,
     title: string,
     reason = '',
-    type: ClassClosure['type'] = 'celebration'
+    type: ClassClosure['type'] = 'celebration',
+    endDate?: string
   ): Promise<void> => {
     try {
+      const effectiveEndDate = endDate && endDate >= date ? endDate : undefined;
       const existing = settings.closedDates || [];
+
+      // Create new closure without ANY undefined properties (Firestore throws if any key is undefined)
       const newClosure: ClassClosure = {
-        id: `closure_${date}`,
+        id: `closure_${date}_${Date.now()}`,
         date,
         title: title.trim(),
         reason: reason.trim(),
@@ -256,40 +265,102 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         closedBy: getEffectiveStaffName(),
         createdAt: new Date().toISOString(),
       };
-      const updated = [...existing.filter((c) => c.date !== date), newClosure].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
+      if (effectiveEndDate && effectiveEndDate > date) {
+        newClosure.endDate = effectiveEndDate;
+      }
 
+      // Sanitize all entries to guarantee clean serializable objects
+      const sanitizedUpdated: ClassClosure[] = [
+        ...existing.filter((c) => c.date !== date && c.id !== newClosure.id),
+        newClosure,
+      ]
+        .map((c) => {
+          const item: ClassClosure = {
+            id: c.id || `closure_${c.date}_${Date.now()}`,
+            date: c.date,
+            title: (c.title || 'Holiday').trim(),
+            reason: (c.reason || '').trim(),
+            type: c.type || 'celebration',
+            closedBy: c.closedBy || 'Staff',
+            createdAt: c.createdAt || new Date().toISOString(),
+          };
+          if (c.endDate && c.endDate >= c.date) {
+            item.endDate = c.endDate;
+          }
+          return item;
+        })
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      // 1. Immediately reflect in local state so UI updates in real-time
+      setSettings((prev) => ({
+        ...prev,
+        closedDates: sanitizedUpdated,
+      }));
+
+      // 2. Persist to Firestore with merge
       await setDoc(
         doc(db, 'instituteSettings', 'general'),
         {
-          closedDates: updated,
+          closedDates: sanitizedUpdated,
           updatedAt: new Date().toISOString(),
         },
         { merge: true }
       );
 
+      const rangeLabel = effectiveEndDate && effectiveEndDate !== date
+        ? `${date} to ${effectiveEndDate}`
+        : date;
+
       await logAudit(
         'CLASS_CLOSURE_DECLARED',
         'InstituteSettings',
         date,
-        `Declared classes closed on ${date} for "${title}". Reason: ${reason || 'Celebration / Event'}. By ${getEffectiveStaffName()}`
+        `Declared classes closed (${rangeLabel}) for "${title}". Reason: ${reason || 'Celebration / Event'}. By ${getEffectiveStaffName()}`
       );
     } catch (err) {
+      console.error("Error in closeClassesForDate:", err);
       handleFirestoreError(err, OperationType.UPDATE, 'instituteSettings/general');
+      throw err;
     }
   };
 
-  // Re-open classes on a previously closed day
-  const reopenClassesForDate = async (date: string): Promise<void> => {
+  // Re-open classes on a previously closed day or range
+  const reopenClassesForDate = async (targetDateOrId: string): Promise<void> => {
     try {
       const existing = settings.closedDates || [];
-      const updated = existing.filter((c) => c.date !== date);
+      const sanitizedUpdated: ClassClosure[] = existing
+        .filter((c) => {
+          if (c.id === targetDateOrId) return false;
+          if (c.date === targetDateOrId) return false;
+          const end = c.endDate || c.date;
+          if (targetDateOrId >= c.date && targetDateOrId <= end) return false;
+          return true;
+        })
+        .map((c) => {
+          const item: ClassClosure = {
+            id: c.id || `closure_${c.date}_${Date.now()}`,
+            date: c.date,
+            title: (c.title || 'Holiday').trim(),
+            reason: (c.reason || '').trim(),
+            type: c.type || 'celebration',
+            closedBy: c.closedBy || 'Staff',
+            createdAt: c.createdAt || new Date().toISOString(),
+          };
+          if (c.endDate && c.endDate >= c.date) {
+            item.endDate = c.endDate;
+          }
+          return item;
+        });
+
+      setSettings((prev) => ({
+        ...prev,
+        closedDates: sanitizedUpdated,
+      }));
 
       await setDoc(
         doc(db, 'instituteSettings', 'general'),
         {
-          closedDates: updated,
+          closedDates: sanitizedUpdated,
           updatedAt: new Date().toISOString(),
         },
         { merge: true }
@@ -298,11 +369,13 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       await logAudit(
         'CLASS_CLOSURE_REMOVED',
         'InstituteSettings',
-        date,
-        `Re-opened classes for ${date}. Closure cancelled by ${getEffectiveStaffName()}`
+        targetDateOrId,
+        `Re-opened classes for ${targetDateOrId}. Closure cancelled by ${getEffectiveStaffName()}`
       );
     } catch (err) {
+      console.error("Error in reopenClassesForDate:", err);
       handleFirestoreError(err, OperationType.UPDATE, 'instituteSettings/general');
+      throw err;
     }
   };
 

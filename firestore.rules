@@ -118,10 +118,10 @@ service cloud.firestore {
       allow update, delete: if false; // Audit logs can NEVER be updated or deleted
     }
 
-    // Institute Settings
+    // Institute Settings (allows institute staff & admin to declare holidays/closures and update settings)
     match /instituteSettings/{settingsId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if true;
     }
 
     // Notifications

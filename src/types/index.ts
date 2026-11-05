@@ -164,8 +164,9 @@ export interface AuditLog {
 
 export interface ClassClosure {
   id: string;
-  date: string; // YYYY-MM-DD
-  title: string; // e.g. "Diwali Celebration", "Uttarayan"
+  date: string; // YYYY-MM-DD (Start date)
+  endDate?: string; // YYYY-MM-DD (End date for multi-day holidays / vacations)
+  title: string; // e.g. "Diwali Vacation", "Uttarayan"
   reason?: string;
   type: 'festival' | 'celebration' | 'event' | 'holiday' | 'other';
   closedBy?: string;

@@ -21,6 +21,7 @@ import {
   RotateCcw,
   UserX,
   Share2,
+  MessageCircle,
 } from 'lucide-react';
 import { Student, StudentStatus } from '../types';
 import { useInstitute, STANDARD_12_HOURLY_BATCHES } from '../context/InstituteContext';
@@ -811,7 +812,37 @@ export const Students: React.FC = () => {
 
                       {/* 5. Contact */}
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="text-slate-800 font-semibold">{s.mobile}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-800 font-semibold">{s.mobile}</span>
+                          {s.mobile && (
+                            <div className="inline-flex items-center gap-1">
+                              <a
+                                href={`tel:${s.mobile.replace(/\D/g, '')}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition cursor-pointer"
+                                title={`Call ${s.fullName} (${s.mobile})`}
+                              >
+                                <Phone className="w-3 h-3" />
+                              </a>
+                              <a
+                                href={`https://wa.me/${
+                                  s.mobile.replace(/\D/g, '').length === 10
+                                    ? '91' + s.mobile.replace(/\D/g, '')
+                                    : s.mobile.replace(/\D/g, '')
+                                }?text=${encodeURIComponent(
+                                  `Hello ${s.fullName}, Greetings from Tech Vision Computer Class.`
+                                )}`}
+                                onClick={(e) => e.stopPropagation()}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 rounded bg-[#25D366] hover:bg-[#20bd5a] text-white transition cursor-pointer"
+                                title={`WhatsApp ${s.fullName}`}
+                              >
+                                <MessageCircle className="w-3 h-3 fill-white" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
                         {s.emergencyContact && (
                           <div className="text-[10px] text-slate-400 truncate max-w-[110px]">
                             Alt: {s.emergencyContact}

@@ -26,15 +26,45 @@ import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
 
 const FESTIVAL_PRESETS = [
-  { title: 'Diwali Celebration & Vacation', type: 'festival', reason: 'Deepawali Festival & New Year Holidays' },
-  { title: 'Uttarayan / Makar Sankranti', type: 'festival', reason: 'Kite Flying Festival & State Holiday' },
-  { title: 'Independence Day', type: 'holiday', reason: 'National Holiday (15th August)' },
-  { title: 'Republic Day', type: 'holiday', reason: 'National Holiday (26th January)' },
-  { title: 'Janmashtami Celebration', type: 'festival', reason: 'Lord Krishna Janmashtami' },
-  { title: 'Ganesh Chaturthi', type: 'festival', reason: 'Ganesh Utsav Celebration' },
-  { title: 'Annual Project Exhibition', type: 'event', reason: 'Institute Computer Exhibition & Project Showcase' },
-  { title: 'Server / Lab Maintenance', type: 'other', reason: 'Hardware & OS upgrades across 14 lab workstations' },
+  { title: 'Diwali Celebration & Vacation', type: 'festival', reason: 'Deepawali Festival & New Year Holidays', days: 7 },
+  { title: 'Uttarayan / Makar Sankranti', type: 'festival', reason: 'Kite Flying Festival & State Holiday', days: 2 },
+  { title: 'Independence Day', type: 'holiday', reason: 'National Holiday (15th August)', days: 1 },
+  { title: 'Republic Day', type: 'holiday', reason: 'National Holiday (26th January)', days: 1 },
+  { title: 'Janmashtami Celebration', type: 'festival', reason: 'Lord Krishna Janmashtami', days: 1 },
+  { title: 'Ganesh Chaturthi', type: 'festival', reason: 'Ganesh Utsav Celebration', days: 2 },
+  { title: 'Holi - Dhuleti Vacation', type: 'festival', reason: 'Festival of Colors Vacation', days: 2 },
+  { title: 'Summer Vacation Break', type: 'holiday', reason: 'Annual Summer Vacation Break', days: 10 },
+  { title: 'Annual Project Exhibition', type: 'event', reason: 'Institute Computer Exhibition & Project Showcase', days: 1 },
+  { title: 'Server / Lab Maintenance', type: 'other', reason: 'Hardware & OS upgrades across 14 lab workstations', days: 1 },
 ];
+
+const addDaysToDate = (dateStr: string, days: number): string => {
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + (days - 1));
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return dateStr;
+  }
+};
+
+const getDaysDifference = (startStr: string, endStr: string): number => {
+  try {
+    const [y1, m1, d1] = startStr.split('-').map(Number);
+    const [y2, m2, d2] = endStr.split('-').map(Number);
+    const date1 = new Date(y1, m1 - 1, d1);
+    const date2 = new Date(y2, m2 - 1, d2);
+    const diffTime = date2.getTime() - date1.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
+  } catch {
+    return 1;
+  }
+};
 
 export const Attendance: React.FC = () => {
   const {
@@ -60,8 +90,9 @@ export const Attendance: React.FC = () => {
   const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
   const [isHolidaysListOpen, setIsHolidaysListOpen] = useState(false);
 
-  // Closure Form state
+  // Closure Form state (Supports 1 day, multiple days, or any desired duration)
   const [closureDate, setClosureDate] = useState(selectedDate);
+  const [closureEndDate, setClosureEndDate] = useState(selectedDate);
   const [closureTitle, setClosureTitle] = useState('');
   const [closureReason, setClosureReason] = useState('');
   const [closureType, setClosureType] = useState<ClassClosure['type']>('celebration');
@@ -162,16 +193,26 @@ export const Attendance: React.FC = () => {
 
   const openCloseModalForCurrentDate = () => {
     setClosureDate(selectedDate);
+    setClosureEndDate(selectedDate);
     setClosureTitle('');
     setClosureReason('');
     setClosureType('celebration');
     setIsClosureModalOpen(true);
   };
 
+  const setHolidayDays = (numDays: number) => {
+    setClosureEndDate(addDaysToDate(closureDate, numDays));
+  };
+
   const handlePresetSelect = (preset: typeof FESTIVAL_PRESETS[0]) => {
     setClosureTitle(preset.title);
     setClosureType(preset.type as ClassClosure['type']);
     setClosureReason(preset.reason);
+    if (preset.days && preset.days > 1) {
+      setClosureEndDate(addDaysToDate(closureDate, preset.days));
+    } else {
+      setClosureEndDate(closureDate);
+    }
   };
 
   const handleConfirmClosure = async (e: React.FormEvent) => {
@@ -182,11 +223,24 @@ export const Attendance: React.FC = () => {
     }
     setIsSubmittingClosure(true);
     try {
-      await closeClassesForDate(closureDate, closureTitle, closureReason, closureType);
-      showToast(`Classes closed for ${formatDate(closureDate)} on occasion of "${closureTitle}".`, 'success');
+      const effectiveEndDate = closureEndDate >= closureDate ? closureEndDate : closureDate;
+      await closeClassesForDate(
+        closureDate,
+        closureTitle,
+        closureReason,
+        closureType,
+        effectiveEndDate !== closureDate ? effectiveEndDate : undefined
+      );
+      const totalDays = getDaysDifference(closureDate, effectiveEndDate);
+      const durationText = totalDays > 1
+        ? `${totalDays} Days (${formatDate(closureDate)} to ${formatDate(effectiveEndDate)})`
+        : formatDate(closureDate);
+      showToast(`Classes closed for ${durationText} on occasion of "${closureTitle}".`, 'success');
       setIsClosureModalOpen(false);
-    } catch {
-      showToast('Failed to declare class closure.', 'error');
+    } catch (err: unknown) {
+      console.error("Failed to declare class closure:", err);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to declare class closure: ${msg}`, 'error');
     } finally {
       setIsSubmittingClosure(false);
     }
@@ -196,8 +250,10 @@ export const Attendance: React.FC = () => {
     try {
       await reopenClassesForDate(dateToReopen);
       showToast(`Re-opened classes for ${formatDate(dateToReopen)}. Students can attend.`, 'success');
-    } catch {
-      showToast('Failed to reopen classes.', 'error');
+    } catch (err: unknown) {
+      console.error("Failed to reopen classes:", err);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to reopen classes: ${msg}`, 'error');
     }
   };
 
@@ -222,13 +278,13 @@ export const Attendance: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Close Class for a Day Button */}
+          {/* Close Class for a Day / Declare Holiday Button */}
           <button
             onClick={openCloseModalForCurrentDate}
             className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <PartyPopper className="w-4 h-4 text-amber-600" />
-            Close Classes for a Day
+            Declare Holiday / Vacation
           </button>
 
           {/* View Scheduled Closures */}
@@ -302,12 +358,22 @@ export const Attendance: React.FC = () => {
               <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-extrabold text-white uppercase tracking-wider mb-0.5">
                 <Sparkles className="w-3 h-3" />
                 Special Closure: {currentClosure.type.toUpperCase()}
+                {currentClosure.endDate && currentClosure.endDate !== currentClosure.date && (
+                  <span className="ml-1 px-1.5 py-0.2 bg-black/20 rounded font-mono">
+                    {getDaysDifference(currentClosure.date, currentClosure.endDate)} Days Vacation
+                  </span>
+                )}
               </div>
               <h3 className="text-base font-black text-white">
                 Classes Closed: {currentClosure.title}
               </h3>
               <p className="text-xs text-amber-100 mt-0.5">
-                {currentClosure.reason || 'Institute declared closed on this day.'}
+                {currentClosure.endDate && currentClosure.endDate !== currentClosure.date ? (
+                  <span className="font-semibold text-white mr-1.5">
+                    Holiday Range: {formatDate(currentClosure.date)} to {formatDate(currentClosure.endDate)} •
+                  </span>
+                ) : null}
+                {currentClosure.reason || 'Institute declared closed for students.'}
                 {currentClosure.closedBy ? ` • Marked by ${currentClosure.closedBy}` : ''}
               </p>
             </div>
@@ -315,10 +381,10 @@ export const Attendance: React.FC = () => {
 
           <div className="flex items-center gap-2 self-start sm:self-center">
             <button
-              onClick={() => handleReopenClasses(selectedDate)}
+              onClick={() => handleReopenClasses(currentClosure.id || selectedDate)}
               className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-black transition shadow-sm cursor-pointer"
             >
-              Re-open Classes on this Day
+              Re-open Classes
             </button>
           </div>
         </div>
@@ -595,10 +661,10 @@ export const Attendance: React.FC = () => {
         </div>
       </div>
 
-      {/* MODAL: Declare Class Closure for a Day / Celebration */}
+      {/* MODAL: Declare Class Closure / Holiday / Vacation */}
       {isClosureModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative overflow-hidden animate-in zoom-in-95 max-h-[92dvh] overflow-y-auto">
             <button
               onClick={() => setIsClosureModalOpen(false)}
               className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
@@ -607,15 +673,15 @@ export const Attendance: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+              <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
                 <PartyPopper className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="text-lg font-black text-slate-900">
-                  Close Classes for a Day / Event
+                  Declare Holiday / Vacation
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Declare holiday for Diwali, Uttarayan, celebration, or institute event.
+                  Declare holiday for 1 day, multiple days, or as many days as desired (Diwali vacation, Uttarayan, etc.).
                 </p>
               </div>
             </div>
@@ -623,7 +689,7 @@ export const Attendance: React.FC = () => {
             {/* Quick Presets */}
             <div className="mb-4">
               <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                Quick Celebration / Holiday Presets
+                Quick Celebration & Vacation Presets
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {FESTIVAL_PRESETS.map((preset) => (
@@ -633,24 +699,119 @@ export const Attendance: React.FC = () => {
                     onClick={() => handlePresetSelect(preset)}
                     className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 text-[11px] font-semibold transition cursor-pointer border border-slate-200"
                   >
-                    + {preset.title}
+                    + {preset.title} {preset.days && preset.days > 1 ? `(${preset.days}d)` : ''}
                   </button>
                 ))}
               </div>
             </div>
 
             <form onSubmit={handleConfirmClosure} className="space-y-3.5">
+              {/* Duration Type selector */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Closure Date
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Holiday Duration Mode
                 </label>
-                <input
-                  type="date"
-                  required
-                  value={closureDate}
-                  onChange={(e) => setClosureDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
-                />
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClosureEndDate(closureDate);
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                      closureEndDate === closureDate
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    1 Single Day Holiday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (closureEndDate <= closureDate) {
+                        setClosureEndDate(addDaysToDate(closureDate, 3));
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                      closureEndDate > closureDate
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Multiple Days / Vacation
+                  </button>
+                </div>
+
+                {/* Quick days shortcuts */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <span className="text-[11px] text-slate-500 font-semibold">Quick Duration:</span>
+                  {[1, 2, 3, 5, 7, 10, 14, 21, 30].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setHolidayDays(d)}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold border transition cursor-pointer ${
+                        getDaysDifference(closureDate, closureEndDate) === d
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-slate-100 hover:bg-amber-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {d} {d === 1 ? 'Day' : 'Days'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Start Date & End Date Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={closureDate}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      setClosureDate(newStart);
+                      if (closureEndDate < newStart) {
+                        setClosureEndDate(newStart);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    End Date (Up to Any Date)
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    min={closureDate}
+                    value={closureEndDate}
+                    onChange={(e) => setClosureEndDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Total Duration Banner */}
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarOff className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    Total Vacation:{' '}
+                    <strong className="text-amber-900">
+                      {getDaysDifference(closureDate, closureEndDate)}{' '}
+                      {getDaysDifference(closureDate, closureEndDate) === 1 ? 'Day' : 'Days'}
+                    </strong>{' '}
+                    ({formatDate(closureDate)}
+                    {closureEndDate > closureDate ? ` to ${formatDate(closureEndDate)}` : ''})
+                  </span>
+                </div>
               </div>
 
               <div>
@@ -662,7 +823,7 @@ export const Attendance: React.FC = () => {
                   required
                   value={closureTitle}
                   onChange={(e) => setClosureTitle(e.target.value)}
-                  placeholder="e.g. Diwali Celebration & Vacation, Uttarayan, Annual Day"
+                  placeholder="e.g. Diwali Celebration & Vacation, Uttarayan, Summer Vacation"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
                 />
               </div>
@@ -676,10 +837,10 @@ export const Attendance: React.FC = () => {
                   onChange={(e) => setClosureType(e.target.value as ClassClosure['type'])}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:bg-white"
                 >
-                  <option value="festival">Festival & Cultural Celebration</option>
+                  <option value="festival">Festival & Cultural Celebration (Diwali, Uttarayan, etc.)</option>
+                  <option value="holiday">Vacation / Public Holiday</option>
                   <option value="celebration">Institute Celebration</option>
                   <option value="event">Academic Event / Exhibition</option>
-                  <option value="holiday">Public / State Holiday</option>
                   <option value="other">Maintenance / Other</option>
                 </select>
               </div>
@@ -700,7 +861,7 @@ export const Attendance: React.FC = () => {
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
                 <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <p>
-                  <strong>No Attendance Penalties:</strong> On closed days, student absence streak reminders are paused and attendance pending alerts are disabled.
+                  <strong>No Attendance Penalties:</strong> On declared holiday days, student absence streak reminders are paused and attendance pending notifications are disabled.
                 </p>
               </div>
 
@@ -717,7 +878,9 @@ export const Attendance: React.FC = () => {
                   disabled={isSubmittingClosure}
                   className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black transition shadow-md shadow-amber-900/20 cursor-pointer disabled:opacity-50"
                 >
-                  {isSubmittingClosure ? 'Closing...' : 'Close Classes for this Day'}
+                  {isSubmittingClosure
+                    ? 'Saving Holiday...'
+                    : `Declare ${getDaysDifference(closureDate, closureEndDate)} Day${getDaysDifference(closureDate, closureEndDate) > 1 ? 's' : ''} Holiday`}
                 </button>
               </div>
             </form>
@@ -746,7 +909,7 @@ export const Attendance: React.FC = () => {
                     Institute Holidays & Class Closures
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Sundays are automatic weekly leave. Listed below are custom celebration closures.
+                    Sundays are automatic weekly leave. Custom holiday ranges and single-day closures are listed below.
                   </p>
                 </div>
               </div>
@@ -767,34 +930,48 @@ export const Attendance: React.FC = () => {
                   No custom festival or celebration closures scheduled yet.
                 </div>
               ) : (
-                declaredClosures.map((c) => (
-                  <div key={c.id || c.date} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-slate-900">{c.title}</span>
-                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
-                          {c.type}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        Date: <strong className="text-slate-700">{formatDate(c.date)}</strong>
-                        {c.reason ? ` • ${c.reason}` : ''}
-                      </div>
-                      {c.closedBy && (
-                        <div className="text-[10px] text-slate-400 mt-0.5">
-                          Declared by: {c.closedBy}
+                declaredClosures.map((c) => {
+                  const isRange = Boolean(c.endDate && c.endDate !== c.date);
+                  const daysCount = isRange ? getDaysDifference(c.date, c.endDate!) : 1;
+                  return (
+                    <div key={c.id || c.date} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-slate-900">{c.title}</span>
+                          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                            {c.type}
+                          </span>
+                          {isRange && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-800 border border-cyan-200">
+                              {daysCount} Days
+                            </span>
+                          )}
                         </div>
-                      )}
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Dates:{' '}
+                          <strong className="text-slate-700">
+                            {isRange
+                              ? `${formatDate(c.date)} → ${formatDate(c.endDate!)} (${daysCount} days)`
+                              : formatDate(c.date)}
+                          </strong>
+                          {c.reason ? ` • ${c.reason}` : ''}
+                        </div>
+                        {c.closedBy && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Declared by: {c.closedBy}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleReopenClasses(c.id || c.date)}
+                        className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Re-open
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleReopenClasses(c.date)}
-                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Re-open
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -807,7 +984,7 @@ export const Attendance: React.FC = () => {
                 className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                Add New Closure / Celebration
+                Add New Holiday / Vacation
               </button>
               <button
                 onClick={() => setIsHolidaysListOpen(false)}

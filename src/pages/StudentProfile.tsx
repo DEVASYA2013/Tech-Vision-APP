@@ -29,6 +29,7 @@ import {
   Sparkles,
   UserX,
   Share2,
+  MessageCircle,
 } from 'lucide-react';
 import { Student, PaymentMethod } from '../types';
 import { useInstitute } from '../context/InstituteContext';
@@ -308,6 +309,35 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
             </>
           )}
 
+          {student.mobile && (
+            <>
+              <a
+                href={`tel:${student.mobile.replace(/\D/g, '')}`}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title={`Call ${student.fullName} at ${student.mobile}`}
+              >
+                <Phone className="w-3.5 h-3.5" />
+                Call Student
+              </a>
+              <a
+                href={`https://wa.me/${
+                  student.mobile.replace(/\D/g, '').length === 10
+                    ? '91' + student.mobile.replace(/\D/g, '')
+                    : student.mobile.replace(/\D/g, '')
+                }?text=${encodeURIComponent(
+                  `Hello ${student.fullName} (GR.No: ${student.grNo || student.studentId}), Greetings from Tech Vision Computer Class, Ahmedabad.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title={`Chat on WhatsApp with ${student.fullName}`}
+              >
+                <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                WhatsApp
+              </a>
+            </>
+          )}
+
           <button
             onClick={handlePrint}
             className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
@@ -514,15 +544,70 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-slate-600 font-medium">
-            <span className="flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-cyan-600" />
-              Mobile: <strong className="text-slate-900">{student.mobile}</strong>
-            </span>
-            {student.emergencyContact && (
+            <div className="flex items-center gap-2">
               <span className="flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-amber-600" />
-                Emergency: <strong className="text-slate-900">{student.emergencyContact}</strong>
+                <Phone className="w-3.5 h-3.5 text-cyan-600" />
+                Mobile: <strong className="text-slate-900">{student.mobile}</strong>
               </span>
+              {student.mobile && (
+                <div className="inline-flex items-center gap-1">
+                  <a
+                    href={`tel:${student.mobile.replace(/\D/g, '')}`}
+                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition"
+                    title={`Call Mobile (${student.mobile})`}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href={`https://wa.me/${
+                      student.mobile.replace(/\D/g, '').length === 10
+                        ? '91' + student.mobile.replace(/\D/g, '')
+                        : student.mobile.replace(/\D/g, '')
+                    }?text=${encodeURIComponent(
+                      `Hello ${student.fullName}, Greetings from Tech Vision Computer Class.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition"
+                    title="Open WhatsApp chat"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-[#25D366] fill-[#25D366]" />
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {student.emergencyContact && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-amber-600" />
+                  Emergency: <strong className="text-slate-900">{student.emergencyContact}</strong>
+                </span>
+                <div className="inline-flex items-center gap-1">
+                  <a
+                    href={`tel:${student.emergencyContact.replace(/\D/g, '')}`}
+                    className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 transition"
+                    title={`Call Emergency (${student.emergencyContact})`}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href={`https://wa.me/${
+                      student.emergencyContact.replace(/\D/g, '').length === 10
+                        ? '91' + student.emergencyContact.replace(/\D/g, '')
+                        : student.emergencyContact.replace(/\D/g, '')
+                    }?text=${encodeURIComponent(
+                      `Hello, Greetings from Tech Vision Computer Class regarding student ${student.fullName}.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition"
+                    title="WhatsApp Emergency Contact"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-[#25D366] fill-[#25D366]" />
+                  </a>
+                </div>
+              </div>
             )}
             {student.aadharCardNo && (
               <span className="flex items-center gap-1.5">
@@ -732,20 +817,78 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-cyan-50/50 border border-cyan-100">
-                  <div className="text-[11px] text-cyan-700 font-medium">Primary Mobile Number</div>
-                  <div className="font-mono font-black text-slate-900 text-sm mt-0.5">
-                    {student.mobile}
+                <div className="p-3 rounded-xl bg-cyan-50/50 border border-cyan-100 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[11px] text-cyan-700 font-medium">Primary Mobile Number</div>
+                    <div className="font-mono font-black text-slate-900 text-sm mt-0.5">
+                      {student.mobile}
+                    </div>
                   </div>
+                  {student.mobile && (
+                    <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-cyan-100">
+                      <a
+                        href={`tel:${student.mobile.replace(/\D/g, '')}`}
+                        className="flex-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <Phone className="w-3 h-3" />
+                        Call
+                      </a>
+                      <a
+                        href={`https://wa.me/${
+                          student.mobile.replace(/\D/g, '').length === 10
+                            ? '91' + student.mobile.replace(/\D/g, '')
+                            : student.mobile.replace(/\D/g, '')
+                        }?text=${encodeURIComponent(
+                          `Hello ${student.fullName}, Greetings from Tech Vision Computer Class, Ahmedabad.`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-1 px-2 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-[11px] transition flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <MessageCircle className="w-3 h-3 fill-white" />
+                        WhatsApp
+                      </a>
+                    </div>
+                  )}
                 </div>
 
-                <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-100">
-                  <div className="text-[11px] text-amber-800 font-medium">
-                    Emergency Contact Number
+                <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-100 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[11px] text-amber-800 font-medium">
+                      Emergency Contact Number
+                    </div>
+                    <div className="font-mono font-bold text-slate-900 text-sm mt-0.5">
+                      {student.emergencyContact || 'Not provided'}
+                    </div>
                   </div>
-                  <div className="font-mono font-bold text-slate-900 text-sm mt-0.5">
-                    {student.emergencyContact || 'Not provided'}
-                  </div>
+                  {student.emergencyContact ? (
+                    <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-amber-200/60">
+                      <a
+                        href={`tel:${student.emergencyContact.replace(/\D/g, '')}`}
+                        className="flex-1 py-1 px-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] transition flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <Phone className="w-3 h-3" />
+                        Call
+                      </a>
+                      <a
+                        href={`https://wa.me/${
+                          student.emergencyContact.replace(/\D/g, '').length === 10
+                            ? '91' + student.emergencyContact.replace(/\D/g, '')
+                            : student.emergencyContact.replace(/\D/g, '')
+                        }?text=${encodeURIComponent(
+                          `Hello, Greetings from Tech Vision Computer Class regarding student ${student.fullName}.`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-1 px-2 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-[11px] transition flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <MessageCircle className="w-3 h-3 fill-white" />
+                        WhatsApp
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 mt-2">No alternate contact</div>
+                  )}
                 </div>
 
                 <div className="sm:col-span-2 p-3 rounded-xl bg-slate-50 border border-slate-100">

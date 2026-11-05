@@ -178,6 +178,7 @@
         "currency": { "type": "string", "maxLength": 16 },
         "totalSeats": { "type": "number" },
         "timezone": { "type": "string", "maxLength": 64 },
+        "closedDates": { "type": "array" },
         "updatedAt": { "type": "string" }
       },
       "required": ["instituteName", "address", "phone"]
