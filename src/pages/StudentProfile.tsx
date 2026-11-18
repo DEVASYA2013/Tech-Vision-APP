@@ -38,6 +38,8 @@ import {
   formatDate,
   getTodayDateString,
   getStudentFeeReminderInfo,
+  getStudentBatchNames,
+  getStudentHoursLabel,
 } from '../utils/formatters';
 import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
@@ -435,12 +437,12 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
                 <span className="text-slate-500">·</span>
                 <span className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                  Batch: {student.batchName || 'Unassigned Batch'}
+                  Batch: {getStudentBatchNames(student).length > 0 ? getStudentBatchNames(student).join(' + ') : 'Unassigned Batch'} ({getStudentHoursLabel(student)})
                 </span>
                 <span className="text-slate-500">·</span>
                 <span className="flex items-center gap-1.5 font-mono font-bold text-amber-300">
                   <Monitor className="w-3.5 h-3.5" />
-                  PC Seat: {student.assignedSeatId ? `${student.assignedSeatId} (1 Hr)` : 'Unassigned'}
+                  PC Seat: {student.assignedSeatId ? `${student.assignedSeatId} (${getStudentHoursLabel(student)})` : 'Unassigned'}
                 </span>
               </div>
             </div>

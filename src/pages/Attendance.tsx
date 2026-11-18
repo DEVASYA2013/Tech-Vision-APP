@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
 import { AttendanceStatus, AttendanceRecordItem, ClassClosure } from '../types';
-import { getTodayDateString, formatDate } from '../utils/formatters';
+import { getTodayDateString, formatDate, studentHasBatch } from '../utils/formatters';
 import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
 
@@ -101,7 +101,7 @@ export const Attendance: React.FC = () => {
   // Active batch object
   const currentBatch = batches.find((b) => b.batchId === selectedBatchId);
   const enrolledStudents = students.filter(
-    (s) => s.batchId === selectedBatchId && s.status === 'active'
+    (s) => studentHasBatch(s, selectedBatchId) && s.status === 'active'
   );
 
   // Date closure check

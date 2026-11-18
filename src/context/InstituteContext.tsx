@@ -35,6 +35,8 @@ import {
   getStudentFeeReminderInfo,
   formatINR,
   formatDate,
+  getStudentBatchIds,
+  studentHasBatch,
 } from '../utils/formatters';
 
 interface InstituteContextType {
@@ -831,17 +833,18 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const studentId = rawGrNo || `GR-${String(100 + count)}`;
     const grNo = studentId;
 
-    // If workstation is assigned, check if another active student in the SAME 1-hour batch already occupies it
-    if (data.assignedSeatId && data.batchId) {
+    // If workstation is assigned, check if another active student in ANY of the selected batches already occupies it
+    const newBatchIds = getStudentBatchIds(data);
+    if (data.assignedSeatId && newBatchIds.length > 0) {
       const conflict = students.find(
         s =>
           s.status === 'active' &&
           s.assignedSeatId === data.assignedSeatId &&
-          s.batchId === data.batchId
+          newBatchIds.some(bid => studentHasBatch(s, bid))
       );
       if (conflict) {
         throw new Error(
-          `Workstation ${data.assignedSeatId} is already assigned to ${conflict.fullName} (GR.No: ${conflict.grNo || conflict.studentId}) during ${data.batchName || data.batchId}. Each workstation supports 1 student per 1-hour batch.`
+          `Workstation ${data.assignedSeatId} is already assigned to ${conflict.fullName} (GR.No: ${conflict.grNo || conflict.studentId}) during one of the selected batches. Each workstation supports 1 student per 1-hour batch.`
         );
       }
     }
@@ -949,21 +952,24 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const newStatus = data.status ?? (data.courseCompleted === true ? 'completed' : current.status);
       const isCourseCompleted = data.courseCompleted !== undefined ? data.courseCompleted : newStatus === 'completed';
 
-      const targetBatchId = data.batchId !== undefined ? data.batchId : current.batchId;
+      const targetBatchIds =
+        data.batchIds !== undefined || data.batchId !== undefined
+          ? getStudentBatchIds({ batchId: data.batchId, batchIds: data.batchIds })
+          : getStudentBatchIds(current);
       const targetSeatId = isCourseCompleted ? '' : (data.assignedSeatId !== undefined ? data.assignedSeatId : current.assignedSeatId);
 
       // Check hourly batch seat conflict if seat or batch changed
-      if (targetSeatId && targetBatchId && newStatus === 'active') {
+      if (targetSeatId && targetBatchIds.length > 0 && newStatus === 'active') {
         const conflict = students.find(
           s =>
             s.id !== current.id &&
             s.status === 'active' &&
             s.assignedSeatId === targetSeatId &&
-            s.batchId === targetBatchId
+            targetBatchIds.some(bid => studentHasBatch(s, bid))
         );
         if (conflict) {
           throw new Error(
-            `Workstation ${targetSeatId} is already assigned to ${conflict.fullName} (GR.No: ${conflict.grNo || conflict.studentId}) in this 1-hour batch.`
+            `Workstation ${targetSeatId} is already assigned to ${conflict.fullName} (GR.No: ${conflict.grNo || conflict.studentId}) in one of the selected 1-hour batches.`
           );
         }
       }
@@ -1591,19 +1597,20 @@ export const InstituteProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         TECH_VISION_14_SEATS.find(s => s.seatNumber === seatNumberOrId || s.seatId === seatNumberOrId);
       if (!seat) throw new Error(`Workstation ${seatNumberOrId} not found`);
 
-      // Prevent conflict ONLY if another active student in the SAME 1-hour batch is already assigned to this workstation
-      if (student.batchId) {
+      // Prevent conflict if another active student in ANY of the student's 1-hour batches is already assigned to this workstation
+      const studentBatchIds = getStudentBatchIds(student);
+      if (studentBatchIds.length > 0) {
         const conflictingStudent = students.find(
           s =>
             s.status === 'active' &&
             s.id !== student.id &&
             s.studentId !== student.studentId &&
             s.assignedSeatId === seat.seatNumber &&
-            s.batchId === student.batchId
+            studentBatchIds.some(bid => studentHasBatch(s, bid))
         );
         if (conflictingStudent) {
           throw new Error(
-            `Workstation ${seat.seatNumber} is already occupied by ${conflictingStudent.fullName} (GR.No: ${conflictingStudent.grNo || conflictingStudent.studentId}) during ${student.batchName || student.batchId}. Each workstation can have 1 student per 1-hour batch (up to 12 batches/day).`
+            `Workstation ${seat.seatNumber} is already occupied by ${conflictingStudent.fullName} (GR.No: ${conflictingStudent.grNo || conflictingStudent.studentId}) during one of the student's batches. Each workstation can have 1 student per 1-hour batch (up to 12 batches/day).`
           );
         }
       }

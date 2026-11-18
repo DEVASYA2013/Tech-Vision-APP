@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { Batch } from '../types';
 import { formatDate } from '../utils/formatters';
 import { useToast } from '../components/ui/Toast';
+import { studentHasBatch } from '../utils/formatters';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
@@ -191,7 +192,7 @@ export const Batches: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {batches.map((batch) => {
             const enrolled = students.filter(
-              (s) => s.batchId === batch.batchId && s.status === 'active'
+              (s) => studentHasBatch(s, batch.batchId) && s.status === 'active'
             );
             const isFull = enrolled.length >= batch.maxCapacity;
 

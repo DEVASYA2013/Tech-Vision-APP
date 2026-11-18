@@ -74,6 +74,8 @@
         "courseName": { "type": "string", "maxLength": 128 },
         "batchId": { "type": "string", "maxLength": 64 },
         "batchName": { "type": "string", "maxLength": 128 },
+        "batchIds": { "type": "array" },
+        "batchNames": { "type": "array" },
         "admissionDate": { "type": "string", "maxLength": 32 },
         "startDate": { "type": "string", "maxLength": 32 },
         "expectedEndDate": { "type": "string", "maxLength": 32 },

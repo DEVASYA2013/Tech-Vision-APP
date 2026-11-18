@@ -36,6 +36,8 @@ export interface Student {
   courseNames?: string[]; // Multiple enrolled course names
   batchId?: string;
   batchName?: string;
+  batchIds?: string[]; // Multiple enrolled batch IDs (e.g. 2 hours = 2 batches)
+  batchNames?: string[]; // Multiple enrolled batch names
   admissionDate: string; // YYYY-MM-DD
   startDate?: string;
   expectedEndDate?: string;

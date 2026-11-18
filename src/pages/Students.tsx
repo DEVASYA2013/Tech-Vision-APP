@@ -32,6 +32,10 @@ import {
   getTodayDateString,
   isValidIndianMobile,
   getStudentFeeReminderInfo,
+  getStudentBatchIds,
+  getStudentBatchNames,
+  studentHasBatch,
+  getStudentHoursLabel,
 } from '../utils/formatters';
 import { exportToCSV } from '../utils/csvExport';
 import { useToast } from '../components/ui/Toast';
@@ -112,6 +116,7 @@ export const Students: React.FC = () => {
     courseId: '',
     courseIds: [] as string[],
     batchId: '',
+    batchIds: [] as string[],
     admissionDate: getTodayDateString(),
     startDate: getTodayDateString(),
     expectedEndDate: '',
@@ -161,7 +166,7 @@ export const Students: React.FC = () => {
           s.courseId === selectedCourse ||
           (s.courseIds && s.courseIds.includes(selectedCourse)) ||
           s.courseId.split(',').map((id) => id.trim()).includes(selectedCourse);
-        const matchesBatch = selectedBatch === 'all' || s.batchId === selectedBatch;
+        const matchesBatch = selectedBatch === 'all' || studentHasBatch(s, selectedBatch);
         const matchesStatus =
           selectedStatus === 'all'
             ? true
@@ -206,6 +211,7 @@ export const Students: React.FC = () => {
       courseId: firstCourseId,
       courseIds: firstCourseId ? [firstCourseId] : [],
       batchId: availableBatches[0]?.batchId || 'BATCH-01',
+      batchIds: availableBatches[0]?.batchId ? [availableBatches[0].batchId] : ['BATCH-01'],
       admissionDate: today,
       startDate: today,
       expectedEndDate: '',
@@ -244,6 +250,7 @@ export const Students: React.FC = () => {
       courseId: existingCourseIds.join(', ') || student.courseId,
       courseIds: existingCourseIds,
       batchId: student.batchId || availableBatches[0]?.batchId || '',
+      batchIds: getStudentBatchIds(student).length > 0 ? getStudentBatchIds(student) : (availableBatches[0]?.batchId ? [availableBatches[0].batchId] : []),
       admissionDate: student.admissionDate || getTodayDateString(),
       startDate: student.startDate || '',
       expectedEndDate: student.expectedEndDate || '',
@@ -276,6 +283,25 @@ export const Students: React.FC = () => {
         courseIds: nextCourseIds,
         courseId: nextCourseIds.join(', '),
         totalCourseFee: summedFee > 0 ? summedFee : prev.totalCourseFee,
+      };
+    });
+  };
+
+  const handleToggleBatchSelection = (targetBatchId: string) => {
+    setFormData((prev) => {
+      const exists = prev.batchIds.includes(targetBatchId);
+      const nextBatchIds = exists
+        ? prev.batchIds.filter((id) => id !== targetBatchId)
+        : [...prev.batchIds, targetBatchId];
+
+      // Sort by standard batch order so timing displays chronologically
+      const batchOrder = new Map(availableBatches.map((b, idx) => [b.batchId, idx]));
+      nextBatchIds.sort((a, b) => (batchOrder.get(a) ?? 999) - (batchOrder.get(b) ?? 999));
+
+      return {
+        ...prev,
+        batchIds: nextBatchIds,
+        batchId: nextBatchIds.join(', '),
       };
     });
   };
@@ -319,7 +345,19 @@ export const Students: React.FC = () => {
     });
     const combinedCourseId = activeCourseIds.join(', ');
     const combinedCourseName = activeCourseNames.join(' + ');
-    const selectedBatchObj = availableBatches.find((b) => b.batchId === formData.batchId);
+
+    const activeBatchIds =
+      formData.batchIds.length > 0
+        ? formData.batchIds
+        : formData.batchId
+          ? formData.batchId.split(',').map((b) => b.trim()).filter(Boolean)
+          : [];
+    const activeBatchNames = activeBatchIds.map((bid) => {
+      const found = availableBatches.find((b) => b.batchId === bid);
+      return found ? found.batchName : bid;
+    });
+    const combinedBatchId = activeBatchIds.join(', ');
+    const combinedBatchName = activeBatchNames.join(' + ');
 
     try {
       if (editingStudent) {
@@ -340,8 +378,10 @@ export const Students: React.FC = () => {
           courseName: combinedCourseName,
           courseIds: activeCourseIds,
           courseNames: activeCourseNames,
-          batchId: formData.batchId,
-          batchName: selectedBatchObj?.batchName || '',
+          batchId: combinedBatchId,
+          batchName: combinedBatchName,
+          batchIds: activeBatchIds,
+          batchNames: activeBatchNames,
           admissionDate: formData.admissionDate || getTodayDateString(),
           startDate: formData.startDate,
           expectedEndDate: formData.expectedEndDate,
@@ -373,8 +413,10 @@ export const Students: React.FC = () => {
           courseName: combinedCourseName,
           courseIds: activeCourseIds,
           courseNames: activeCourseNames,
-          batchId: formData.batchId,
-          batchName: selectedBatchObj?.batchName || '',
+          batchId: combinedBatchId,
+          batchName: combinedBatchName,
+          batchIds: activeBatchIds,
+          batchNames: activeBatchNames,
           admissionDate: formData.admissionDate || getTodayDateString(),
           startDate: formData.startDate,
           expectedEndDate: formData.expectedEndDate,
@@ -798,15 +840,19 @@ export const Students: React.FC = () => {
 
                       {/* 4. Batch & Workstation */}
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="text-slate-700 font-semibold text-[11px]">
-                          {s.batchName || 'No Batch'}
+                        <div className="text-slate-700 font-semibold text-[11px] max-w-[180px]">
+                          {getStudentBatchNames(s).length > 0
+                            ? getStudentBatchNames(s).join(' + ')
+                            : 'No Batch'}
                         </div>
                         {s.assignedSeatId ? (
                           <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-cyan-700 bg-cyan-50 px-1.5 py-0.2 rounded border border-cyan-200">
-                            PC: {s.assignedSeatId} (1 Hr)
+                            PC: {s.assignedSeatId} ({getStudentHoursLabel(s)})
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400">No Seat</span>
+                          <span className="text-[10px] text-slate-400">
+                            No Seat ({getStudentHoursLabel(s)})
+                          </span>
                         )}
                       </td>
 
@@ -1297,95 +1343,116 @@ export const Students: React.FC = () => {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    1-Hour Batch Time Slot (12 Daily Batches) *
+              {/* Multi-Batch Time Slot Selection (1 Hour, 2 Hours, or More) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Select Batch Time Slot(s) — Select 1 Batch (1 Hr) or Multiple Batches (2+ Hrs) *
                   </label>
-                  <select
-                    value={formData.batchId}
-                    onChange={(e) => setFormData({ ...formData, batchId: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white font-bold"
-                  >
-                    <option value="">Select 1-Hour Batch Slot</option>
-                    {availableBatches.map((b) => (
-                      <option key={b.batchId} value={b.batchId}>
-                        {b.batchName}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="text-[11px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-200">
+                    {formData.batchIds.length} batch(es) • {formData.batchIds.length || 0} {formData.batchIds.length === 1 ? 'Hour' : 'Hours'}/Day
+                  </span>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 max-h-48 overflow-y-auto">
+                  {availableBatches.map((b) => {
+                    const isChecked = formData.batchIds.includes(b.batchId);
+                    return (
+                      <label
+                        key={b.batchId}
+                        className={`flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer transition select-none ${
+                          isChecked
+                            ? 'bg-cyan-50 border-cyan-400 text-cyan-950 font-bold shadow-2xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleBatchSelection(b.batchId)}
+                          className="mt-0.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate">{b.batchName}</div>
+                          <div className="text-[10px] text-slate-500 font-normal">
+                            {b.startTime} - {b.endTime}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Tip: Select 2 consecutive batches (e.g., 08:00-09:00 AM &amp; 09:00-10:00 AM) to give a student a 2-hour daily timing.
+                </span>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Assign Workstation for Selected 1-Hour Batch (14 PCs)
-                  </label>
-                  <select
-                    value={formData.assignedSeatId}
-                    onChange={(e) => setFormData({ ...formData, assignedSeatId: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white font-medium"
-                  >
-                    <option value="">No Dedicated Seat (Open Lab)</option>
-                    <optgroup label="Row A — 5 Computers (A-01 to A-05)">
-                      {seats
-                        .filter((s) => s.seatNumber.startsWith('A-'))
-                        .map((s) => {
-                          const occupantInThisBatch = students.find(
-                            (st) =>
-                              st.status === 'active' &&
-                              st.id !== editingStudent?.id &&
-                              st.assignedSeatId === s.seatNumber &&
-                              st.batchId &&
-                              st.batchId === formData.batchId
-                          );
-                          const totalBatchesOnSeat = students.filter(
-                            (st) => st.status === 'active' && st.assignedSeatId === s.seatNumber
-                          ).length;
-                          return (
-                            <option
-                              key={s.seatNumber}
-                              value={s.seatNumber}
-                              disabled={Boolean(occupantInThisBatch)}
-                            >
-                              {s.seatNumber}{' '}
-                              {occupantInThisBatch
-                                ? `(Occupied in this 1-hr batch by ${occupantInThisBatch.fullName} [${occupantInThisBatch.grNo || occupantInThisBatch.studentId}])`
-                                : `(Available for this 1-hr batch • ${totalBatchesOnSeat}/12 daily batches filled)`}
-                            </option>
-                          );
-                        })}
-                    </optgroup>
-                    <optgroup label="Row B — 9 Computers (B-01 to B-09)">
-                      {seats
-                        .filter((s) => s.seatNumber.startsWith('B-'))
-                        .map((s) => {
-                          const occupantInThisBatch = students.find(
-                            (st) =>
-                              st.status === 'active' &&
-                              st.id !== editingStudent?.id &&
-                              st.assignedSeatId === s.seatNumber &&
-                              st.batchId &&
-                              st.batchId === formData.batchId
-                          );
-                          const totalBatchesOnSeat = students.filter(
-                            (st) => st.status === 'active' && st.assignedSeatId === s.seatNumber
-                          ).length;
-                          return (
-                            <option
-                              key={s.seatNumber}
-                              value={s.seatNumber}
-                              disabled={Boolean(occupantInThisBatch)}
-                            >
-                              {s.seatNumber}{' '}
-                              {occupantInThisBatch
-                                ? `(Occupied in this 1-hr batch by ${occupantInThisBatch.fullName} [${occupantInThisBatch.grNo || occupantInThisBatch.studentId}])`
-                                : `(Available for this 1-hr batch • ${totalBatchesOnSeat}/12 daily batches filled)`}
-                            </option>
-                          );
-                        })}
-                    </optgroup>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Assign Workstation for Selected Batch(es) (14 PCs)
+                </label>
+                <select
+                  value={formData.assignedSeatId}
+                  onChange={(e) => setFormData({ ...formData, assignedSeatId: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white font-medium"
+                >
+                  <option value="">No Dedicated Seat (Open Lab)</option>
+                  <optgroup label="Row A — 5 Computers (A-01 to A-05)">
+                    {seats
+                      .filter((s) => s.seatNumber.startsWith('A-'))
+                      .map((s) => {
+                        const occupantInSelectedBatches = students.find(
+                          (st) =>
+                            st.status === 'active' &&
+                            st.id !== editingStudent?.id &&
+                            st.assignedSeatId === s.seatNumber &&
+                            formData.batchIds.some((bid) => studentHasBatch(st, bid))
+                        );
+                        const totalBatchesOnSeat = students
+                          .filter((st) => st.status === 'active' && st.assignedSeatId === s.seatNumber)
+                          .reduce((sum, st) => sum + Math.max(1, getStudentBatchIds(st).length), 0);
+                        return (
+                          <option
+                            key={s.seatNumber}
+                            value={s.seatNumber}
+                            disabled={Boolean(occupantInSelectedBatches)}
+                          >
+                            {s.seatNumber}{' '}
+                            {occupantInSelectedBatches
+                              ? `(Occupied in selected batch by ${occupantInSelectedBatches.fullName} [${occupantInSelectedBatches.grNo || occupantInSelectedBatches.studentId}])`
+                              : `(Available for selected batch(es) • ${totalBatchesOnSeat}/12 daily slots filled)`}
+                          </option>
+                        );
+                      })}
+                  </optgroup>
+                  <optgroup label="Row B — 9 Computers (B-01 to B-09)">
+                    {seats
+                      .filter((s) => s.seatNumber.startsWith('B-'))
+                      .map((s) => {
+                        const occupantInSelectedBatches = students.find(
+                          (st) =>
+                            st.status === 'active' &&
+                            st.id !== editingStudent?.id &&
+                            st.assignedSeatId === s.seatNumber &&
+                            formData.batchIds.some((bid) => studentHasBatch(st, bid))
+                        );
+                        const totalBatchesOnSeat = students
+                          .filter((st) => st.status === 'active' && st.assignedSeatId === s.seatNumber)
+                          .reduce((sum, st) => sum + Math.max(1, getStudentBatchIds(st).length), 0);
+                        return (
+                          <option
+                            key={s.seatNumber}
+                            value={s.seatNumber}
+                            disabled={Boolean(occupantInSelectedBatches)}
+                          >
+                            {s.seatNumber}{' '}
+                            {occupantInSelectedBatches
+                              ? `(Occupied in selected batch by ${occupantInSelectedBatches.fullName} [${occupantInSelectedBatches.grNo || occupantInSelectedBatches.studentId}])`
+                              : `(Available for selected batch(es) • ${totalBatchesOnSeat}/12 daily slots filled)`}
+                          </option>
+                        );
+                      })}
+                  </optgroup>
+                </select>
               </div>
             </div>
           </div>

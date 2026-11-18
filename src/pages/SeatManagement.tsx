@@ -14,6 +14,7 @@ import { useInstitute, STANDARD_12_HOURLY_BATCHES } from '../context/InstituteCo
 import { useAuth } from '../context/AuthContext';
 import { ComputerSeat, SeatStatus, Student } from '../types';
 import { useToast } from '../components/ui/Toast';
+import { studentHasBatch, getStudentBatchIds } from '../utils/formatters';
 import { Modal } from '../components/ui/Modal';
 
 export const SeatManagement: React.FC = () => {
@@ -61,7 +62,7 @@ export const SeatManagement: React.FC = () => {
 
   const getStudentForSeatAndBatch = (seatNumber: string, batchId: string): Student | undefined => {
     return activeStudents.find(
-      (s) => s.assignedSeatId === seatNumber && s.batchId === batchId
+      (s) => s.assignedSeatId === seatNumber && studentHasBatch(s, batchId)
     );
   };
 
@@ -73,7 +74,9 @@ export const SeatManagement: React.FC = () => {
   );
 
   const totalHourlyCapacity = (seats.length || 14) * availableBatches.length;
-  const totalOccupiedSlots = activeStudents.filter((s) => Boolean(s.assignedSeatId)).length;
+  const totalOccupiedSlots = activeStudents
+    .filter((s) => Boolean(s.assignedSeatId))
+    .reduce((sum, s) => sum + Math.max(1, getStudentBatchIds(s).length), 0);
 
   const handleOpenSeatSchedule = (seat: ComputerSeat) => {
     setSelectedSeat(seat);
@@ -328,7 +331,7 @@ export const SeatManagement: React.FC = () => {
           </button>
           {availableBatches.map((b) => {
             const countInBatch = activeStudents.filter(
-              (s) => s.batchId === b.batchId && Boolean(s.assignedSeatId)
+              (s) => studentHasBatch(s, b.batchId) && Boolean(s.assignedSeatId)
             ).length;
             const isSelected = selectedBatchId === b.batchId;
             return (

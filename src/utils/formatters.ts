@@ -257,3 +257,50 @@ export function getStudentFeeReminderInfo(
   };
 }
 
+/**
+ * Multi-Batch (Multi-Hour) Helper Functions
+ * Supports both legacy single-batch students (batchId/batchName) and multi-batch students (batchIds/batchNames).
+ */
+export function getStudentBatchIds(student?: { batchId?: string; batchIds?: string[] } | null): string[] {
+  if (!student) return [];
+  if (Array.isArray(student.batchIds) && student.batchIds.length > 0) {
+    return student.batchIds.filter(Boolean);
+  }
+  if (student.batchId) {
+    return student.batchId
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+export function getStudentBatchNames(student?: { batchName?: string; batchNames?: string[] } | null): string[] {
+  if (!student) return [];
+  if (Array.isArray(student.batchNames) && student.batchNames.length > 0) {
+    return student.batchNames.filter(Boolean);
+  }
+  if (student.batchName) {
+    return student.batchName
+      .split('+')
+      .map((n) => n.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+export function studentHasBatch(
+  student: { batchId?: string; batchIds?: string[] } | null | undefined,
+  targetBatchId: string
+): boolean {
+  if (!student || !targetBatchId) return false;
+  return getStudentBatchIds(student).includes(targetBatchId);
+}
+
+export function getStudentHoursLabel(student?: { batchId?: string; batchIds?: string[] } | null): string {
+  const count = getStudentBatchIds(student).length;
+  if (count <= 1) return '1 Hr';
+  return `${count} Hrs`;
+}
+
+
