@@ -76,8 +76,8 @@ export const Students: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [selectedBatch, setSelectedBatch] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'date' | 'balance'>('name');
+  const [selectedStatus, setSelectedStatus] = useState<string>('active');
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'balance' | 'gr_asc' | 'gr_desc'>('name');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -180,6 +180,12 @@ export const Students: React.FC = () => {
         if (sortBy === 'name') return a.fullName.localeCompare(b.fullName);
         if (sortBy === 'date') return b.admissionDate.localeCompare(a.admissionDate);
         if (sortBy === 'balance') return (b.outstandingBalance || 0) - (a.outstandingBalance || 0);
+        if (sortBy === 'gr_asc' || sortBy === 'gr_desc') {
+          const grA = (a.grNo || a.studentId || '').trim();
+          const grB = (b.grNo || b.studentId || '').trim();
+          const cmp = grA.localeCompare(grB, undefined, { numeric: true, sensitivity: 'base' });
+          return sortBy === 'gr_asc' ? cmp : -cmp;
+        }
         return 0;
       });
   }, [students, searchTerm, selectedCourse, selectedBatch, selectedStatus, sortBy, oneMonthDueStudentIds]);
@@ -193,7 +199,21 @@ export const Students: React.FC = () => {
 
   const handleOpenAddModal = () => {
     setEditingStudent(null);
-    const nextGrNumber = `GR-${100 + students.length + 1}`;
+    // Find the highest numeric GR.No across all students and increment by 1 (e.g. 1063 -> 1064)
+    let maxNum = 0;
+    let detectedPrefix = '';
+    students.forEach((s) => {
+      const raw = (s.grNo || s.studentId || '').trim();
+      const match = raw.match(/^(.*?)(\d+)$/);
+      if (match) {
+        const num = parseInt(match[2], 10);
+        if (!isNaN(num) && num >= maxNum) {
+          maxNum = num;
+          detectedPrefix = match[1];
+        }
+      }
+    });
+    const nextGrNumber = maxNum > 0 ? `${detectedPrefix}${maxNum + 1}` : '1001';
     const today = getTodayDateString();
     const firstCourseId = courses[0]?.courseId || '';
     setFormData({
@@ -727,6 +747,8 @@ export const Students: React.FC = () => {
               className="w-full py-2 px-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:bg-white text-slate-700 font-medium"
             >
               <option value="name">Sort by Name</option>
+              <option value="gr_asc">Sort by GR.No (Low → High)</option>
+              <option value="gr_desc">Sort by GR.No (High → Low)</option>
               <option value="date">Sort by Admission Date</option>
               <option value="balance">Sort by Pending Balance</option>
             </select>
