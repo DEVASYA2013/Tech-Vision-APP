@@ -8,7 +8,7 @@ import {
   Sparkles,
   LogIn,
 } from 'lucide-react';
-import { useAuth, StaffDutyName, getScheduledStaffDutyByTime } from '../../context/AuthContext';
+import { useAuth, StaffDutyName } from '../../context/AuthContext';
 import { useToast } from '../ui/Toast';
 
 interface StaffDutyModalProps {
@@ -19,9 +19,8 @@ export const StaffDutyModal: React.FC<StaffDutyModalProps> = ({ canCloseWithoutS
   const { activeStaffDuty, setActiveStaffDuty, isStaffDutyModalOpen, setIsStaffDutyModalOpen } = useAuth();
   const { showToast } = useToast();
 
-  const scheduled = getScheduledStaffDutyByTime();
   const [selectedStaff, setSelectedStaff] = useState<StaffDutyName>(
-    activeStaffDuty || scheduled.staff
+    activeStaffDuty || 'Diya Patel'
   );
 
   if (!isStaffDutyModalOpen) return null;
@@ -108,15 +107,8 @@ export const StaffDutyModal: React.FC<StaffDutyModalProps> = ({ canCloseWithoutS
               </div>
 
               <div className="mt-3.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base sm:text-lg font-black text-slate-900">Diya Patel</h3>
-                  {scheduled.staff === 'Diya Patel' && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800">
-                      Current Shift
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs font-semibold text-cyan-700 mt-0.5">8:00 AM – 2:00 PM</div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900">Diya Patel</h3>
+                <div className="text-xs font-semibold text-cyan-700 mt-0.5">Faculty / Instructor</div>
               </div>
 
               {/* Instant Tap to Enter button directly on card */}
@@ -162,15 +154,8 @@ export const StaffDutyModal: React.FC<StaffDutyModalProps> = ({ canCloseWithoutS
               </div>
 
               <div className="mt-3.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base sm:text-lg font-black text-slate-900">Jinal Prajapati</h3>
-                  {scheduled.staff === 'Jinal Prajapati' && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      Current Shift
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs font-semibold text-emerald-700 mt-0.5">2:00 PM – 8:00 PM</div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900">Jinal Prajapati</h3>
+                <div className="text-xs font-semibold text-emerald-700 mt-0.5">Faculty / Instructor</div>
               </div>
 
               {/* Instant Tap to Enter button directly on card */}

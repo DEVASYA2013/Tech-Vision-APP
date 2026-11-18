@@ -29,32 +29,6 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 export type StaffDutyName = 'Diya Patel' | 'Jinal Prajapati';
 
-/**
- * Automatically determines which staff member is on duty based on current IST (Asia/Kolkata) time:
- * - Diya Patel: 8:00 AM to 2:00 PM (08:00 - 13:59)
- * - Jinal Prajapati: 2:00 PM to 8:00 PM (14:00 - 19:59)
- */
-export function getScheduledStaffDutyByTime(): { staff: StaffDutyName; shiftLabel: string } {
-  try {
-    const hourStr = new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric',
-      hour12: false,
-      timeZone: 'Asia/Kolkata',
-    }).format(new Date());
-    const hour = parseInt(hourStr, 10) % 24;
-    if (hour >= 14) {
-      return { staff: 'Jinal Prajapati', shiftLabel: '2:00 PM – 8:00 PM' };
-    }
-    return { staff: 'Diya Patel', shiftLabel: '8:00 AM – 2:00 PM' };
-  } catch {
-    const hour = new Date().getHours();
-    if (hour >= 14) {
-      return { staff: 'Jinal Prajapati', shiftLabel: '2:00 PM – 8:00 PM' };
-    }
-    return { staff: 'Diya Patel', shiftLabel: '8:00 AM – 2:00 PM' };
-  }
-}
-
 interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
@@ -123,9 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirstAdminSetupAvailable, setIsFirstAdminSetupAvailable] = useState(false);
-  const [activeStaffDuty, setActiveStaffDutyState] = useState<StaffDutyName | null>(() => {
-    return (sessionStorage.getItem(STAFF_DUTY_SESSION_KEY) as StaffDutyName) || null;
-  });
+  const [activeStaffDuty, setActiveStaffDutyState] = useState<StaffDutyName | null>(null);
   const [isStaffDutyModalOpen, setIsStaffDutyModalOpen] = useState(false);
 
   // Check if any admin exists in the database
@@ -593,21 +565,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserProfile((prev) => (prev ? { ...prev, displayName: name } : prev));
   };
 
-  // Automatically decide who is on duty based on shift time (8am-2pm Diya Patel, 2pm-8pm Jinal Prajapati)
+  // Prompt staff account to select who is on duty whenever opening the app
   useEffect(() => {
-    if (!loading && currentUser && isStaffAccount) {
-      const saved = sessionStorage.getItem(STAFF_DUTY_SESSION_KEY) as StaffDutyName | null;
-      const targetStaff = saved || getScheduledStaffDutyByTime().staff;
-      if (!saved) {
-        sessionStorage.setItem(STAFF_DUTY_SESSION_KEY, targetStaff);
-        localStorage.setItem('tv_last_active_duty_staff', targetStaff);
-      }
-      if (targetStaff !== activeStaffDuty) {
-        setActiveStaffDutyState(targetStaff);
-        setUserProfile((prev) => (prev ? { ...prev, displayName: targetStaff } : prev));
-      }
+    if (!loading && currentUser && isStaffAccount && !activeStaffDuty) {
+      setIsStaffDutyModalOpen(true);
     }
-  }, [loading, currentUser?.uid, isStaffAccount]);
+  }, [loading, currentUser?.uid, isStaffAccount, activeStaffDuty]);
 
   return (
     <AuthContext.Provider
